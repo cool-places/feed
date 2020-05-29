@@ -41,7 +41,7 @@ users = [
 ]
 
 # used to generate random ages for posts
-now = time.time()
+now = int(time.time())
 week_ago = now - 86400*7
 
 # used to generate random strings
@@ -55,7 +55,7 @@ dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
 
 # Note that "hot" posts are
 # relatively rare (just like the real world)
-hot_factors = [1, 22, 30, 35, 40, 60, 74]
+hot_factors = [0.01, 0.22, 0.3, 0.35, 0.4, 0.6, 0.74]
 cum_hot_weights = [60, 70, 80, 85, 90, 97, 100]
 
 seen_vals = [10, 100, 1000, 5000, 10000]
@@ -64,7 +64,9 @@ cum_seen_weights = [10000, 15000, 16000, 16100, 16110]
 def new_random_post(creator):
     hot_factor =  random.choices(hot_factors, cum_weights=cum_hot_weights)[0]
     seen = random.choices(seen_vals, cum_weights=cum_seen_weights)[0]
-    likes = seen * hot_factor
+    likes = int(seen * hot_factor)
+
+    likes = random.randint(max(0, likes-10), min(seen, likes+10))
 
     creationTime = random.randint(week_ago, now)
 
@@ -84,20 +86,20 @@ def new_random_post(creator):
 def random_str(max_len):
     start = random.randint(0, len(dummy_text) - 1 - max_len) 
     length = random.randint(7, max_len)
-    return dummy_text[start:length]
+    return dummy_text[start:start+length]
 
 # insert cities
-for id, displayName in cities.items():
-    cursor.execute('INSERT INTO Locality VALUES (?,?)', id, displayName)
-cursor.commit()
+#for id, displayName in cities.items():
+#    cursor.execute('INSERT INTO Locality VALUES (?,?)', id, displayName)
+#cursor.commit()
 
 # insert users
-city_ids = cities.keys()
-for user in users:
-    cursor.execute('INSERT INTO Users VALUES (?,?,?,?,?,?,?)', user.lower(),
-            random.choice(city_ids), user,
-            f'Hello! My name is {user}.', 1, time.time(), 'email')
-cursor.commit()
+#city_ids = [key for key in cities.keys()]
+#for user in users:
+#    cursor.execute('INSERT INTO Users VALUES (?,?,?,?,?,?,?)', user.lower(),
+#            random.choice(city_ids), user,
+#            f'Hello! My name is {user}.', 1, time.time(), 'email')
+#cursor.commit()
 
 num_posts = dict()
 
