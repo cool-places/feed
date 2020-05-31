@@ -47,7 +47,7 @@ class WTree:
         self.holes = deque([(self.root, 'l'), (self.root, 'r')])
 
     def add(self, id, hot_factor):
-        if (id not in self.nodes:
+        if id not in self.nodes:
             parent, c = self.holes.popleft()
             node = Node(id, hot_factor)
             self.nodes[id] = node
@@ -121,7 +121,7 @@ class WTree:
 
         num = random.randint(1, self.root.sum)
         ans = pop_h(self.root, num)
-        return (ans.id, ans.hot_factor)
+        return ans.id
 
     def size(self):
         return len(self.nodes)
