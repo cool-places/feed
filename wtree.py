@@ -13,21 +13,22 @@ def print_tree(tree):
     print_h(tree.root, '')
 
 class Node:
-    def __init__(self, id=None, hotness=None, parent=None, type='LEAF'):
+    def __init__(self, id=None, hot_factor=None, parent=None, type='LEAF'):
+        # we are going to treat id itself is the data that Node holds
         self.id = id
         self.parent = parent
         self.l, self.r = None, None
 
         self.lsum = 0
-        self.hotness = hotness
+        self.hot_factor = hot_factor
         self.type = type # enum('PATH', 'LEAF')
-        self.sum = hotness if type == 'LEAF' else 0
+        self.sum = hot_factor if type == 'LEAF' else 0
 
     def shed(self):
         assert(self.type == 'LEAF')
 
-        node = Node(self.id, self.hotness)
-        self.id, self.hotness = None, None
+        node = Node(self.id, self.hot_factor)
+        self.id, self.hot_factor = None, None
         self.type = 'PATH'
         return node
 
@@ -39,61 +40,48 @@ class WTree:
     def __init__(self):
         # entry dummy node
         self.root = Node(type='PATH')
-        # id -> leaf node
+        # map: id -> leaf node
         self.nodes = dict()
 
-        # queue of places to add to
+        # holes represent queue of places to add to
         self.holes = deque([(self.root, 'l'), (self.root, 'r')])
 
-    def add(self, id, hotness):
-        parent, c = self.holes.popleft()
-        node = Node(id, hotness)
-        self.nodes[id] = node
+    def add(self, id, hot_factor):
+        if (id not in self.nodes:
+            parent, c = self.holes.popleft()
+            node = Node(id, hot_factor)
+            self.nodes[id] = node
 
-        if c == 'l':
-            parent.l = node
-        else:
-            parent.r = node
-        node.parent = parent
-        
-        if (parent.type == 'LEAF'):
-            # push leaf down to right
-            parent.r = parent.shed()
-            parent.r.parent = parent
-            self.nodes[parent.r.id] = parent.r
-            # add more holes to add to
-            self.holes.extend([(node, 'l'), (parent.r, 'l')])
-        else:
-            self.holes.append((node, 'l'))
-
-        # update hotness up the tree
-        parent.lsum = parent.l.sum
-        parent.sum = parent.lsum + (0 if parent.r is None else parent.r.sum)
-
-        child = parent
-        parent = parent.parent
-
-        while (parent is not None):
-            if (child is parent.l):
-                parent.lsum = child.sum
-                parent.sum = parent.lsum + (0 if parent.r is None else parent.r.sum)
+            if c == 'l':
+                parent.l = node
             else:
-                parent.sum = parent.lsum + child.sum 
+                parent.r = node
+            node.parent = parent
+            
+            if (parent.type == 'LEAF'):
+                # push leaf down to right
+                parent.r = parent.shed()
+                parent.r.parent = parent
+                self.nodes[parent.r.id] = parent.r
+                # add more holes that data can be added to
+                self.holes.extend([(node, 'l'), (parent.r, 'l')])
+            else:
+                self.holes.append((node, 'l'))
+
+            parent.lsum = parent.l.sum
+            parent.sum = parent.lsum + (0 if parent.r is None else parent.r.sum)
 
             child = parent
             parent = parent.parent
+        else:
+            node = self.nodes[id]
+            node.hot_factor = hot_factor
+            node.sum = hot_factor
 
-    def update(self, id, hotness):
-        if id not in self.nodes:
-            return
-        
-        node = self.nodes[id]
-        node.hotness = hotness
-        node.sum = hotness
+            child = node
+            parent = node.parent
 
-        child = node
-        parent = node.parent
-
+        # update hot_factor up the tree
         while (parent is not None):
             if (child is parent.l):
                 parent.lsum = child.sum
@@ -128,15 +116,18 @@ class WTree:
 
             return ans
 
-        try:
-            num = random.randint(1, self.root.sum)
-            ans = pop_h(self.root, num)
-            return (ans.id, ans.hotness)
-        except Exception as e:
-            print_tree(self)
+        if len(self.nodes) == 0:
+            return None
+
+        num = random.randint(1, self.root.sum)
+        ans = pop_h(self.root, num)
+        return (ans.id, ans.hot_factor)
+
+    def size(self):
+        return len(self.nodes)
 
     def pop_multi(self, n):
-        return [self.pop() for i in range(n)]
+        return [self.pop() for i in range(min(n, len(self.nodes)))]
 
 
 # simple test
