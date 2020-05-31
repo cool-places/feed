@@ -14,20 +14,19 @@ def calculate_hot_factor(post):
 
 posts = Stream('seattle')
 most_recent_posts = posts.get_tip()
-# lean = WTree()
-# # 2nc chance for posts
-# fat = WTree()
+lean = WTree()
+fat = WTree()
 
 for post in most_recent_posts:
-    age = (int(time.time()) - post[1]) // 3600 
+    age = (int(time.time()) - post[1]) // block_size 
     hf = calculate_hot_factor(post)
-    print(f'{post[0]}, {age}h, likes: {post[2]}, hf: {hf}') 
+    # print(f'{post[0]}, {age}h, likes: {post[2]}, hf: {hf}') 
 
-    # # 10 is an arbitrary number...
-    # if age > block_size and hf < 10:
-    #     fat.add(post, hf)
-    # else:
-    #     lean.add(post, hf)
+    # 10 is an arbitrary number...
+    if age > block_size and hf < 10:
+        fat.add(post, hf)
+    else:
+        lean.add(post, hf)
 
 # cur = posts.tip - block_size
 # while (cur >= 0 and lean.size() < 100):
@@ -44,16 +43,19 @@ for post in most_recent_posts:
 
 #     cur -= block_size
 
-# while True:
-#     user_in = input('Press enter to receive next page!')
+while lean.size() > 0:
+    user_in = input('Press enter to receive next page!')
 
-#     num_fat = random.randint(0, 5)
-#     num_lean = 25 - how_much_fat
+    num_fat = random.randint(0, 5)
+    num_lean = 25 - num__fat
 
-#     page = lean.pop_multi(num_lean) + fat.pop_multi(num_fat)
-#     for post in page:
-#         age = (time.time() - post[1]) / 3600
-#         print(f'{post[0]} {age}h likes: {post[2]}') 
+    page = lean.pop_multi(num_lean) + fat.pop_multi(num_fat)
+    for post in page:
+        age = (time.time() - post[1]) // 3600
+        hf = calculate_hot_factor(post)
+        print(f'  {post[0]}, {age}h, likes: {post[2]}, hf: {hf}')
+
+print('ran out of posts :(')
 
 
 
