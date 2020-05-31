@@ -45,7 +45,7 @@ class Stream:
         return self.cache[self.tip]
 
     def get_block(self, ts):
-        assert(ts % self.block_size == 0)
+        assert(ts % block_size == 0)
 
         if ts in self.cache:
             return self.cache[ts]
@@ -54,7 +54,7 @@ class Stream:
             FROM Posts\
             WHERE locality=?\
             AND creationTime BETWEEN ? AND ?\
-            ORDER BY creationTime DESC', locality, ts, ts + block_size - 1)
+            ORDER BY creationTime DESC', self.locality, ts, ts + block_size - 1)
         self.cache[ts] = cursor.fetchall()
         return self.cache[ts]
         
