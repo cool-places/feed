@@ -1,5 +1,6 @@
 # Store global variables here
 import configparser
+import pyodbc
 
 config = configparser.ConfigParser()
 config.read('./app.ini')

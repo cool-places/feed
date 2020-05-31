@@ -1,4 +1,4 @@
-import cursor, block_size from app_state
+from app_state import cursor, block_size
 import time
 
 class Stream:
@@ -41,10 +41,10 @@ class Stream:
             self.cache[self.tip] = cursor.fetchall()
             
 
-    def get_tip():
+    def get_tip(self):
         return self.cache[self.tip]
 
-    def get_block(ts):
+    def get_block(self, ts):
         assert(ts % self.block_size == 0)
 
         if ts in self.cache:

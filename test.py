@@ -10,7 +10,7 @@ def nearest_block(ts):
 
 def calculate_hot_factor(post):
     age = int(time.time()) - post[1]
-    return max(1, int((post[2]/post[3]) * 100) + post[2]//10 - (age/block_size) * 10)
+    return max(1, int((post[2]/post[3]) * 100) + post[2]//10 - (age//block_size) * 10)
 
 posts = Stream('seattle')
 most_recent_posts = posts.get_tip()
