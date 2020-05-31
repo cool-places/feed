@@ -18,7 +18,7 @@ lean = WTree()
 fat = WTree()
 
 for post in most_recent_posts:
-    age = (int(time.time()) - post[1]) // block_size 
+    age = (int(time.time()) - post[1])
     hf = calculate_hot_factor(post)
     # print(f'{post[0]}, {age}h, likes: {post[2]}, hf: {hf}') 
 
@@ -28,25 +28,15 @@ for post in most_recent_posts:
     else:
         lean.add((post[0], post[1], post[2], post[3]), hf)
 
-# cur = posts.tip - block_size
-# while (cur >= 0 and lean.size() < 100):
-#     block = posts.get_block(cur)
-
-#     for post in block:
-#         age = int(time.time()) - post[1]
-#         hf = calculate_hot_factor(post)
-#         # 10 is an arbitrary number...
-#         if age > block_size and hf < 10:
-#             fat.add(post, hf)
-#         else:
-#             lean.add(post, hf)
-
-#     cur -= block_size
-
-while lean.size() > 0:
+cur = posts.tip - block_size
+while lean.size() != 0 or fat.size() != 0:
     user_in = input('Press enter to receive next page!')
 
-    num_fat = random.randint(0, 5)
+    if (lean.size() == 0):
+        num_fat = 25
+    else:
+        num_fat = random.randint(0, 5)
+        
     num_lean = 25 - num_fat
 
     page = lean.pop_multi(num_lean) + fat.pop_multi(num_fat)
@@ -55,6 +45,22 @@ while lean.size() > 0:
         age = (time.time() - post[1]) // 3600
         hf = calculate_hot_factor(post)
         print(f'  {age}h  likes: {post[2]}  hf: {hf}')
+
+    while (cur >= 0 and lean.size() < 100):
+        block = posts.get_block(cur)
+
+        for post in block:
+            age = int(time.time()) - post[1]
+            hf = calculate_hot_factor(post)
+
+            # 10 is an arbitrary number...
+            if age > block_size and hf < 10:
+                fat.add((post[0], post[1], post[2], post[3]), hf)
+            else:
+                lean.add((post[0], post[1], post[2], post[3]), hf)
+
+        cur -= block_size
+    
 
 print('ran out of posts :(')
 
