@@ -68,7 +68,7 @@ class WTree:
             else:
                 self.holes.append((node, 'l'))
 
-            parent.lsum = parent.l.sum
+            parent.lsum = (0 if parent.l is None else parent.l.sum)
             parent.sum = parent.lsum + (0 if parent.r is None else parent.r.sum)
 
             child = parent
