@@ -97,8 +97,8 @@ def populate_posts_data(posts):
         }
 
         data[indices[i]] = post_dict
-        p1.set(f'post:{posts[i]}') = json.dumps(post_dict)
-        p1.set(f'post:{posts[i]}:likes') = row[7]
+        p1.set(f'post:{posts[i]}', json.dumps(post_dict))
+        p1.set(f'post:{posts[i]}:likes', row[7])
         # add likes
         post_dict['likes'] = row[7]
 

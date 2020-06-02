@@ -17,13 +17,13 @@ from services import build_trees, get_page, populate_posts_data
 # Async work is work that doesn't need to be done
 # immediately during a client request.
 work_q = queue.Queue()
-start_new_thread(async_worker.run, work_q)
+start_new_thread(async_worker.run, (work_q,))
 
 app = Flask(__name__)
 
 # health check
 @app.route('/ping')
-for ping():
+def ping():
     return 'PONG'
 
 @app.route('/<user>/<locality>/feed')
@@ -38,7 +38,7 @@ def get_feed(user, locality):
         return 'OK'
 
     # save next page to cache for fast serving
-    work_q.put(lambda () : asyn_worker.background_task(user, locality, lean, fat))
+    work_q.put(lambda : asyn_worker.background_task(user, locality, lean, fat))
     return jsonify(populate_posts_data(page))
 
 

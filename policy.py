@@ -20,6 +20,6 @@ def is_cold(creationTime, hot_factor):
     age = int(time.time()) - creationTime
     
     # 10 is an arbitrary number, not thought out in any way
-    if age > TIME_BLOCK_SIZE and hot_factor < 10:
+    return age > TIME_BLOCK_SIZE and hot_factor < 10
 
 

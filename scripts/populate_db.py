@@ -69,7 +69,7 @@ def new_random_post(creator):
 
     likes = random.randint(max(0, likes-10), min(seen, likes+10))
 
-    creationTime = random.randint(week_ago, now)
+    creationTime = random.randint(time_ago, now)
 
     return {
         'creator': creator,
