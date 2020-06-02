@@ -43,7 +43,7 @@ users = [
 
 # used to generate random ages for posts
 now = int(time.time())
-week_ago = now - 86400*7
+time_ago = now - 86400*3 # s days
 
 # used to generate random strings
 dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\

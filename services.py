@@ -86,17 +86,21 @@ def populate_posts_data(posts):
     row = cursor.fetchone()
     i = 0
     while row:
-        post_dict = dict(row)
+        post_dict = {
+            'creator': row[0],
+            'creationTime': row[1],
+            'title': row[2],
+            'description': row[3],
+            'address': row[4],
+            'lat': row[5],
+            'lng': row[6]
+        }
+
         data[indices[i]] = post_dict
-
-        # separate out likes before caching
-        # (because likes is likely to be a lot more volatile than other vals)
-        likes = post_dict.pop('likes')
         p1.set(f'post:{posts[i]}') = json.dumps(post_dict)
-        p1.set(f'post:{posts[i]}:likes') = likes
-
-        # add likes back in
-        post_dict['likes'] = likes
+        p1.set(f'post:{posts[i]}:likes') = row[7]
+        # add likes
+        post_dict['likes'] = row[7]
 
         row = cursor.fetchone()
         i += 1

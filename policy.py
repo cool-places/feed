@@ -3,7 +3,7 @@
 
 import time
 
-TIME_BLOCK_SIZE = 24 * 3600 # 24 hours
+TIME_BLOCK_SIZE = 5 * 3600 # 5 hours
 MAX_SEEN_POSTS = 10000
 MIN_TREE_SIZE = 100
 PAGE_SIZE = 25
