@@ -17,5 +17,5 @@ cursor = cnxn.cursor()
 cursor.execute('SELECT * from Posts where creator=?', 'rubab')
 row = cursor.fetchone()
 # test whether row can get converted
-# to dict out of the box
+# to dict out of the box (it doesn't)
 print(dict(row))

@@ -13,8 +13,8 @@ from policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FA
 
 # private helper
 def fetch_posts(epoch, locality, cache=True):
-    posts = r.get(f'posts:{locality}:{epoch}')
-    if posts is not None:
+    posts = r.smembers(f'posts:{locality}:{epoch}')
+    if len(posts) != 0:
         return posts
 
     p = pipeline()
@@ -109,14 +109,15 @@ def populate_posts_data(posts):
     return data
 
 def grow_trees(user, locality, lean ,fat):
-    now = (time.time())
+    now = int(time.time())
     # first fetch most recent posts...
     epoch = now - now % TIME_BLOCK_SIZE
     p = pipeline()
 
     tail = r.get(f'user:{user}:session:tail')
     if tail is None or epoch - tail >= (TIME_BLOCK_SIZE*2):
-        p.set(f'user:{user}:session:tail', epoch - TIME_BLOCK_SIZE)
+        tail = epoch - TIME_BLOCK_SIZE
+        p.set(f'user:{user}:session:tail', tail)
     
     seen = r.smembers(f'user:{user}:session:seen')
     if len(seen) >= MAX_SEEN_POSTS:
@@ -152,8 +153,8 @@ def grow_trees(user, locality, lean ,fat):
             if lean.size() < MIN_TREE_SIZE:
                 tail -= TIME_BLOCK_SIZE
         
-        p.set(f'user:{user}:session:tail', tail)
-        p.execute()
+    p.set(f'user:{user}:session:tail', tail)
+    p.execute()
 
 def build_trees(user, locality):
     # stores post ids. post ids are in the form of
@@ -167,12 +168,11 @@ def build_trees(user, locality):
     posts_list = []
     hot_factors = []
 
-    if posts is not None:
-        for post in posts:
-            posts_list.append(post)
-            p.get(f'post:{post}:hot_factor')
+    for post in posts:
+        posts_list.append(post)
+        p.get(f'post:{post}:hot_factor')
 
-        hot_factors = p.execute()
+    hot_factors = p.execute()
 
     # recalculate hot factors that have expired or
     # nonexistent in cache
