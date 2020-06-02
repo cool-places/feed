@@ -1,3 +1,8 @@
+## Data structure for what I call weight trees.
+##
+## Used to randomly sample posts w/ relative weights (hot_factors)
+## without replacement.
+
 from collections import deque
 import random
 

@@ -1,6 +1,8 @@
-# Store global variables here
+## Store global variables (such as DB and redis connection) here.
+
 import configparser
 import pyodbc
+import redis
 
 config = configparser.ConfigParser()
 config.read('./app.ini')
@@ -15,5 +17,4 @@ driver = '{ODBC Driver 17 for SQL Server}'
 cnxn = pyodbc.connect(f'DRIVER={driver};SERVER={server};PORT=1433;DATABASE={database};UID={username};PWD={password}')
 cursor = cnxn.cursor()
 
-# discretizes time into blocks of size block_size
-block_size = 24 * 3600
+r = redis.Redis(host=config['redis']['host'], port=6379, db=0)

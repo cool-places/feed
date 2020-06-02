@@ -1,4 +1,5 @@
-# Populates database with test data
+## Populates database with test data.
+
 import random
 import time
 import configparser
