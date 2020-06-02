@@ -6,8 +6,8 @@
 import queue
 from _thread import start_new_thread
 import json
+from flask import Flask, request, jsonify
 
-from flask import Flask, escape, request, jsonify
 import async_worker
 from app_state import r
 from services import build_trees, get_page, populate_posts_data
@@ -18,6 +18,8 @@ from services import build_trees, get_page, populate_posts_data
 # immediately during a client request.
 work_q = queue.Queue()
 start_new_thread(async_worker.run, work_q)
+
+app = Flask(__name__)
 
 # health check
 @app.route('/ping')
@@ -38,6 +40,5 @@ def get_feed(user, locality):
     # save next page to cache for fast serving
     work_q.put(lambda () : asyn_worker.background_task(user, locality, lean, fat))
     return jsonify(populate_posts_data(page))
-
 
 
