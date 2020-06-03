@@ -7,19 +7,30 @@ import time
 import random
 import json
 
-from wtree import WTree
-from app_state import cursor, r
-from policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, calculate_hot_factor, is_cold
+from .wtree import WTree
+from .app_state import cursor, r
+from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, calculate_hot_factor, is_cold
 
 # private helper
 def fetch_posts(epoch, locality, cache=True):
+    p = r.pipeline()
     posts = r.smembers(f'posts:{locality}:{epoch}')
-    if len(posts) != 0:
-        return posts
-
-    p = pipeline()
-    posts = []
     hot_factors = []
+
+    if len(posts) != 0:
+        # posts is a set in redis cache. This is
+        # to (naively) support concurrent caching of posts
+        # without worrying about duplicate posts
+        posts = list(posts)
+        for i in range(len(posts)):
+            p.get(f'post:{posts[i]}:hot_factor')
+
+        # makes the assumption that if post exists in cache,
+        # its hot factor also exists.
+        hot_factors = p.execute()
+        return (posts, hot_factors)
+
+    posts = []
 
     cursor.execute('SELECT creator, creationTime, likes, seenBy\
             FROM Posts\
@@ -36,16 +47,17 @@ def fetch_posts(epoch, locality, cache=True):
         hot_factors.append(hf)
 
         if cache:
-            p.set('post:{post_id}:likes', row[2])
-            p.set('post:{post_id}:seen_by', row[3])
-            p.set('post:{post_id}:hot_factor', hf)
+            p.set(f'post:{post_id}:likes', row[2])
+            p.set(f'post:{post_id}:seen_by', row[3])
+            p.set(f'post:{post_id}:hot_factor', hf)
             # force app to recalculate hot factor after 60 seconds
-            p.expire('post:{post_id}:hot_factor', 60)
+            p.expire(f'post:{post_id}:hot_factor', 60)
 
         row = cursor.fetchone()
     
     if cache:
-        p.sadd(f'posts:{locality}:{epoch}', *posts)
+        if (len(posts)) != 0:
+            p.sadd(f'posts:{locality}:{epoch}', *posts)
         p.execute()
     
     return (posts, hot_factors)
