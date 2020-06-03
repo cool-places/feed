@@ -1,6 +1,6 @@
 ## Service layer. Exists to decouple application logic from HTTP context.
 ##
-## A majority of logic involves fetching things from DB and caching the
+## Majority of the logic involves fetching things from DB and caching the
 ## results.
 
 import time
@@ -9,7 +9,69 @@ import json
 
 from .wtree import WTree
 from .app_state import cursor, r
-from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, calculate_hot_factor, is_cold
+from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, calculate_hot_factor, is_cold
+
+## Calculate hot factors of posts in batches.
+def calculate_hot_factors_batch(posts, hot_factors):
+    # posts at these indices don't have hot factors
+    # in cache but has likes, seen_by stats in cache
+    indices = []
+    # posts at these indices don't have any stats
+    # in acache
+    indices_buf = []
+    p = r.pipeline()
+
+    for i in range(len(posts)):
+        post = posts[i]
+        if hot_factors[i] is None:
+            indices.append(i)
+            p.get(f'post:{post}:likes')
+            p.get(f'post:{post}:seen_by')
+
+    stats = p.execute()
+    inputs = []
+    for i in range(len(stats), step=2):
+        post = posts[indices[i]]
+        # break down id into components
+        keys = post.split('_')
+        keys[1] = int(keys[1])
+
+        # if likes doesn't exist, seen_by also doesn't.
+        # (and conversely (inversely?)): if likes exist, so does seen_by).
+        if stats[i] is None:
+            indices_buf.append(indices[i])
+            inputs.append(tuple(keys))
+        else:
+            hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
+            hot_factors[indices[i]] = hf
+
+            p.set(f'post:{post}:hot_factor', hf)
+            # force app to recalculate hot factor
+            p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
+
+    indices = indices_buf
+    cursor.fast_executemany = True
+    cursor.executemany('SELECT likes, seenBy FROM Posts\
+            WHERE creator=? AND creationTime=?', inputs)
+
+    row = cursor.fetchone()
+    i = 0
+    while row:
+        post = posts[indices[i]]
+        creationTime = inputs[indices[i]][1]
+
+        hf = calculate_hot_factor(creationTime, row[0], row[1])
+        hot_factors[indices[i]] = hf
+
+        p.set(f'post:{post}:hot_factor', hf)
+        p.set(f'post:{post}:likes', row[0])
+        p.set(f'post:{post}:seen_by', row[1])
+        p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
+
+        row = cursor.fetchone()
+        i += 1
+
+    p.execute()
 
 # private helper
 def fetch_posts(epoch, locality, cache=True):
@@ -25,13 +87,11 @@ def fetch_posts(epoch, locality, cache=True):
         for i in range(len(posts)):
             p.get(f'post:{posts[i]}:hot_factor')
 
-        # makes the assumption that if post exists in cache,
-        # its hot factor also exists.
         hot_factors = p.execute()
+        calculate_hot_factors_batch(posts, hot_factors)
         return (posts, hot_factors)
 
     posts = []
-
     cursor.execute('SELECT creator, creationTime, likes, seenBy\
             FROM Posts\
             WHERE locality=?\
@@ -169,8 +229,7 @@ def grow_trees(user, locality, lean ,fat):
     p.execute()
 
 def build_trees(user, locality):
-    # stores post ids. post ids are in the form of
-    # [creator]_[creationTime]
+    # stores post ids. post ids are in the form of [creator]_[creationTime]
     lean = WTree()
     fat = WTree()
 
@@ -185,55 +244,16 @@ def build_trees(user, locality):
         p.get(f'post:{post}:hot_factor')
 
     hot_factors = p.execute()
+    calculate_hot_factors_batch(posts_list, hot_factors)
 
-    # recalculate hot factors that have expired or
-    # nonexistent in cache
-    for i in range(len(posts_list)):
-        post = posts_list[i]
+    for i, post in enumerate(posts_list):
+        keys = post.split('_')
+        keys[1] = int(keys[1])
 
-        if hot_factors[i] is None:
-            p.get(f'post:{post}:likes')
-            p.get(f'post:{post}:seen_by')
-            stats = p.execute()
-            
-            # break down id into components
-            keys = post.split('_')
-            keys[1] = int(keys[1])
-
-            if stats[0] is None and stats[1] is None:
-                cursor.execute('SELECT likes, seenBy FROM Posts\
-                    WHERE creator=? AND creationTime=?', keys[0], keys[1])
-                stats = cursor.fetchone()
-
-                p.set(f'post:{post}:likes', stats[0])
-                p.set(f'post:{post}:seen_by', stats[1])
-            elif stats[0] is None:
-                cursor.execute('SELECT likes FROM Posts\
-                    WHERE creator=? AND creationTime=?', keys[0], keys[1])
-                stats[0] = cursor.fetchone()[0]
-
-                p.set(f'post:{post}:likes', stats[0])
-            elif stats[1] is None:
-                cursor.execute('SELECT seenBy FROM Posts\
-                    WHERE creator=? AND creationTime=?', keys[0], keys[1])
-                stats[1] = cursor.fetchone()[0]
-
-                p.set(f'post:{post}:seen_by', stats[1])
-
-            hf = calculate_hot_factor(keys[1], stats[0], stats[1])
-            hot_factors[i] = hf
-
-            p.set(f'post:{post}:hot_factor', hf)
-            # force app to recalculate hot factor after 60 seconds
-            p.expire(f'post:{post}:hot_factor', 60)
-        
         if is_cold(keys[1], hot_factors[i]):
             fat.add(post, hot_factors[i])
         else:
             lean.add(post, hot_factors[i])
-
-    # cache fetched likes, seen_by, caclulated hot factors
-    p.execute()
 
     # if tree is too small...
     if lean.size() < MIN_TREE_SIZE:

@@ -8,6 +8,7 @@ MAX_SEEN_POSTS = 10000
 MIN_TREE_SIZE = 100
 PAGE_SIZE = 25
 FAT_PERCENT = 10
+HOT_FACTOR_EXPIRATION = 120 # 120 secs
 
 # used as relative weights when sampling posts
 def calculate_hot_factor(creationTime, likes, seen_by):
