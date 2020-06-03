@@ -8,8 +8,15 @@ import random
 import json
 
 from .wtree import WTree
-from .app_state import cursor, r
+from .app_state import cursor, cnxn, r
 from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, calculate_hot_factor, is_cold
+
+## Break down a post id into its composite key components.
+def unpack(id):
+    keys = id.split(b'_')
+    keys[0] = keys[0].decode('utf-8')
+    keys[1] = int(keys[1])
+    return tuple(keys)
 
 ## Calculate hot factors of posts in batches.
 def calculate_hot_factors_batch(posts, hot_factors):
@@ -30,46 +37,46 @@ def calculate_hot_factors_batch(posts, hot_factors):
 
     stats = p.execute()
     inputs = []
-    for i in range(len(stats), step=2):
-        post = posts[indices[i]]
-        # break down id into components
-        keys = post.split('_')
-        keys[1] = int(keys[1])
+    for i in range(0, len(stats), 2):
+        post = posts[indices[i//2]]
+        keys = unpack(post)
 
         # if likes doesn't exist, seen_by also doesn't.
         # (and conversely (inversely?)): if likes exist, so does seen_by).
         if stats[i] is None:
-            indices_buf.append(indices[i])
-            inputs.append(tuple(keys))
+            indices_buf.append(indices[i//2])
+            inputs.append(keys)
         else:
             hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
-            hot_factors[indices[i]] = hf
+            hot_factors[indices[i//2]] = hf
 
             p.set(f'post:{post}:hot_factor', hf)
             # force app to recalculate hot factor
             p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
 
     indices = indices_buf
-    cursor.fast_executemany = True
-    cursor.executemany('SELECT likes, seenBy FROM Posts\
-            WHERE creator=? AND creationTime=?', inputs)
-
-    row = cursor.fetchone()
-    i = 0
-    while row:
-        post = posts[indices[i]]
-        creationTime = inputs[indices[i]][1]
-
-        hf = calculate_hot_factor(creationTime, row[0], row[1])
-        hot_factors[indices[i]] = hf
-
-        p.set(f'post:{post}:hot_factor', hf)
-        p.set(f'post:{post}:likes', row[0])
-        p.set(f'post:{post}:seen_by', row[1])
-        p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
-
+    if len(inputs) > 0:
+        print(inputs)
+        cursor.fast_executemany = True
+        cursor.executemany('SELECT likes, seenBy FROM Posts\
+                WHERE creator=? AND creationTime=?', inputs)
+        cnxn.commit()
         row = cursor.fetchone()
-        i += 1
+        i = 0
+        while row:
+            post = posts[indices[i]]
+            creationTime = inputs[indices[i]][1]
+
+            hf = calculate_hot_factor(creationTime, row[0], row[1])
+            hot_factors[indices[i]] = hf
+
+            p.set(f'post:{post}:hot_factor', hf)
+            p.set(f'post:{post}:likes', row[0])
+            p.set(f'post:{post}:seen_by', row[1])
+            p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
+
+            row = cursor.fetchone()
+            i += 1
 
     p.execute()
 
@@ -136,14 +143,13 @@ def populate_posts_data(posts):
 
     # simulate keys -> index
     indices = []
-    keys = []
+    inputs = []
     # fetch post data from DB if nonxistent
     for i in range(len(posts)):
-        keys = post[i].split('_')
-        keys[1] = int(keys[1])
+        keys = unpack(posts[i])
 
         if data[i] is None or likes[i] is None:
-            keys.append(tuple(keys))
+            inputs.append(keys)
             indices.append(i)
         else:
             data[i] = json.loads(data[i])
@@ -153,7 +159,7 @@ def populate_posts_data(posts):
     cursor.executemany('SELECT creator, creationTime, title, description, address, lat, lng, likes\
             FROM Posts\
             WHERE creator=?\
-            AND creationTime=?', keys)
+            AND creationTime=?', inputs)
 
     row = cursor.fetchone()
     i = 0
@@ -210,9 +216,7 @@ def grow_trees(user, locality, lean ,fat):
                 continue
 
             post = posts[i]
-            # break down id into components
-            keys = post.split('_')
-            keys[1] = int(keys[1])
+            keys = unpack(post)
             
             if is_cold(keys[1], hot_factors[i]):
                 fat.add(post, hot_factors[i])
@@ -247,8 +251,7 @@ def build_trees(user, locality):
     calculate_hot_factors_batch(posts_list, hot_factors)
 
     for i, post in enumerate(posts_list):
-        keys = post.split('_')
-        keys[1] = int(keys[1])
+        keys = unpack(post)
 
         if is_cold(keys[1], hot_factors[i]):
             fat.add(post, hot_factors[i])
