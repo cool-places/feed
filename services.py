@@ -9,7 +9,7 @@ import json
 
 from .wtree import WTree
 from .app_state import cursor, cnxn, r
-from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, calculate_hot_factor, is_cold
+from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, INCEPTION, calculate_hot_factor, is_cold
 
 ## Break down a post id into its composite key components.
 def unpack(id):
@@ -31,6 +31,8 @@ def calculate_hot_factors_batch(posts, hot_factors):
             indices.append(i)
             p.get(f'post:{post}:likes')
             p.get(f'post:{post}:seen_by')
+        else:
+            hot_factors[i] = int(hot_factors[i])
 
     stats = p.execute()
     inputs = []
@@ -46,13 +48,13 @@ def calculate_hot_factors_batch(posts, hot_factors):
             # for every post...but hopefully there aren't that
             # many posts whose stats are not cached
             cursor.execute('SELECT likes, seenBy FROM Posts\
-                    WHERE creator=? AND creationTime=?')
+                    WHERE creator=? AND creationTime=?', keys[0], keys[1])
             row = cursor.fetchone()
             stats[i], stats[i+1] = row[0], row[1]
             p.set(f'post:{post}:likes', row[0])
             p.set(f'post:{post}:seen_by', row[1])
 
-        hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
+        hf = calculate_hot_factor(keys[1], int(stats[i]), int(stats[i+1]))
         hot_factors[indices[i//2]] = hf
 
         p.set(f'post:{post}:hot_factor', hf)
@@ -135,7 +137,7 @@ def populate_posts_data(posts):
             cursor.execute('SELECT creator, creationTime, title, description, address, lat, lng, likes\
                 FROM Posts\
                 WHERE creator=?\
-                AND creationTime=?')
+                AND creationTime=?', keys[0], keys[1])
             row = cursor.fetchone()
 
             post_dict = {
@@ -154,7 +156,7 @@ def populate_posts_data(posts):
             post_dict['likes'] = row[7]
         else:
             data[i] = json.loads(data[i])
-            data[i]['likes'] = likes[i]
+            data[i]['likes'] = int(likes[i])
 
     p1.execute()
     return data
@@ -163,9 +165,9 @@ def grow_trees(user, locality, lean ,fat):
     now = int(time.time())
     # first fetch most recent posts...
     epoch = now - now % TIME_BLOCK_SIZE
-    p = pipeline()
+    p = r.pipeline()
 
-    tail = r.get(f'user:{user}:session:tail')
+    tail = int(r.get(f'user:{user}:session:tail'))
     if tail is None or epoch - tail >= (TIME_BLOCK_SIZE*2):
         tail = epoch - TIME_BLOCK_SIZE
         p.set(f'user:{user}:session:tail', tail)
@@ -174,16 +176,13 @@ def grow_trees(user, locality, lean ,fat):
     if len(seen) >= MAX_SEEN_POSTS:
         # flush seen posts
         r.delete(f'user:{user}:session:seen')
-        seen = {} 
-
-    while lean.size() < MIN_TREE_SIZE:
+        seen = {}
+    
+    while lean.size() < MIN_TREE_SIZE and epoch > INCEPTION:
         posts, hot_factors = fetch_posts(epoch, locality)
 
-        # no more posts :(
-        if len(posts) == 0:
-            break
-
-        for i in range in len(posts):
+        before = time.time()
+        for i in range(len(posts)):
             # if post already seen by user, ignore
             if posts[i] in seen:
                 continue
@@ -196,11 +195,14 @@ def grow_trees(user, locality, lean ,fat):
             else:
                 lean.add(post, hot_factors[i])
                 p.sadd(f'user:{user}:session:tree', post)
+        after = time.time()
+        lat = (after - before) * 1000
+        print(f'took {lat} ms to add {len(posts)} posts')
 
-            # then continue fetching posts from the past
-            epoch = tail
-            if lean.size() < MIN_TREE_SIZE:
-                tail -= TIME_BLOCK_SIZE
+        # continue fetching posts from the past
+        epoch = tail
+        if lean.size() < MIN_TREE_SIZE:
+            tail -= TIME_BLOCK_SIZE
         
     p.set(f'user:{user}:session:tail', tail)
     p.execute()
@@ -243,12 +245,16 @@ def get_feed_page(user, lean, fat, fat_percentage=FAT_PERCENT, page_size=PAGE_SI
 
     for i in range(page_size):
         coin = random.randint(1, 100)
-        if coin <= fat_percentage:
+        if coin <= fat_percentage and fat.size() > 0:
             # sampling without replacement ensures
             # no duplicate posts per page
             post = fat.pop()
-        else:
+        elif lean.size() > 0:
             post = lean.pop()
+        elif fat.size() > 0:
+            post = fat.pop()
+        else:
+            break
         
         # remove from tree
         p.srem(f'user:{user}:session:tree', post)    
