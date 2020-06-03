@@ -37,17 +37,25 @@ def calculate_hot_factors_batch(posts, hot_factors):
         keys[1] = int(keys[1])
 
         # if likes doesn't exist, seen_by also doesn't.
-        # (and conversely (inversely?)): if likes exist, so does seen_by).
+        # (and conversely (or is itinversely?) if likes exist,
+        # so does seen_by).
         if stats[i] is None:
-            indices_buf.append(indices[i])
-            inputs.append(tuple(keys))
-        else:
-            hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
-            hot_factors[indices[i]] = hf
+            # kinda bothers me to have to go back and forth to DB
+            # for every post...but hopefully there aren't that
+            # many posts whose stats are not cached
+            cursor.execute('SELECT likes, seenBy FROM Posts\
+                    WHERE creator=? AND creationTime=?', inputs)
+            row = cursor.fetchone()
+            stats[i], stats[i+1] = row[0], row[1]
+            p.set(f'post:{post}:likes', row[0])
+            p.set(f'post:{post}:seen_by', row[1])
 
-            p.set(f'post:{post}:hot_factor', hf)
-            # force app to recalculate hot factor
-            p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
+        hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
+        hot_factors[indices[i]] = hf
+
+        p.set(f'post:{post}:hot_factor', hf)
+        # force app to recalculate hot factor
+        p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
 
     indices = indices_buf
     cursor.fast_executemany = True
@@ -64,8 +72,6 @@ def calculate_hot_factors_batch(posts, hot_factors):
         hot_factors[indices[i]] = hf
 
         p.set(f'post:{post}:hot_factor', hf)
-        p.set(f'post:{post}:likes', row[0])
-        p.set(f'post:{post}:seen_by', row[1])
         p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
 
         row = cursor.fetchone()
