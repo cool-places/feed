@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify
 
 import async_worker
 from app_state import r
-from services import build_trees, get_page, populate_posts_data
+from services import build_trees, get_feed_page, populate_posts_data
 
 # Where async work will be queued up.
 #
@@ -29,7 +29,7 @@ def ping():
 @app.route('/<user>/<locality>/feed')
 def get_feed(user, locality):
     lean, fat = build_trees(user, locality)
-    page = get_page(user, lean, fat)
+    page = get_feed_page(user, lean, fat)
 
     # Client doesn't want the response. Just wants
     # it to be saved in cache (essentially an RPC)
