@@ -42,7 +42,7 @@ dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
         Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt\
         mollit anim id est laborum.'
 
-def new_random_post(creator):
+def new_random_post(creator, locality):
     # mean of 0.2
     hot_factor = max(abs(random.gauss(0.2, 0.15)), 1)
     # mean of 50
@@ -55,6 +55,7 @@ def new_random_post(creator):
         creationTime,
         random.uniform(0, 90),
         random.uniform(0, 180),
+        locality,
         random_str(32),
         'some-id',
         random_str(24),
@@ -79,7 +80,7 @@ cursor.fast_executemany = True
 added = 0
 for i in range(num_posts):
     user_id, locality = random.choice(users)
-    post = new_random_post(user_id)
+    post = new_random_post(user_id, locality)
     # check if post with same key already exists
     cursor.execute('SELECT * from Posts where creator=? and creationTime=?',
         post[0], post[1])
