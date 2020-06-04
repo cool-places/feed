@@ -63,6 +63,11 @@ def new_random_post(creator):
         seen
     )
 
+def random_str(max_len):
+    start = random.randint(0, len(dummy_text) - 1 - max_len) 
+    length = random.randint(7, max_len)
+    return dummy_text[start:start+length]
+
 before = time.time()
 
 inputs = []
@@ -78,10 +83,10 @@ for i in range(num_posts):
     # check if post with same key already exists
     cursor.execute('SELECT * from Posts where creator=? and creationTime=?',
         post[0], post[1])
-        exists = cursor.fetchone()
-        if not exists:
-            inputs.append(post)
-            added += 1
+    exists = cursor.fetchone()
+    if not exists:
+        inputs.append(post)
+        added += 1
 
 cursor.executemany('INSERT INTO Posts VALUES (?,?,?,?,?,?,?,?,?,?,?)', inputs)
 cursor.commit()
