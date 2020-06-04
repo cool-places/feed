@@ -1,15 +1,13 @@
 ## Async worker.
 
-# generic name because it does a lot of things
-# and can't come up with a good name that encapsulates
-# all that.
-# 
-# It's purposely not lean because Python lambdas
-# cannot be multiline :()
-def background_task(user, locality, lean, fat):
-    # TODO:
-    #   (1) generate page from lean, fat trees
-    #   (2) cache said generated tree
+# Generates & caches next page of feed, building the tree
+# if necessary
+def cache_next_page(user, locality, lean=None, fat=None):
+    # TODO
+    return
+
+def increment_seen(page, unmarshal):
+    # TODO
     return
 
 def run(work_q):

@@ -8,9 +8,9 @@ from _thread import start_new_thread
 import json
 from flask import Flask, request, jsonify
 
-import async_worker
-from app_state import r
-from services import build_trees, get_feed_page, populate_posts_data
+import feed.async_worker
+from feed.app_state import r
+from feed.services import build_trees, get_feed_page, populate_posts_data
 
 # Where async work will be queued up.
 #
@@ -28,17 +28,19 @@ def ping():
 
 @app.route('/<user>/<locality>/feed')
 def get_feed(user, locality):
+    page = r.get(f'user:{user}:session:next')
+    
+    if page is not None:
+        work_q.put(lambda: async_worker.increment_seen(page, unmarshal=True))
+        work_q.put(lambda: async_worker.cache_next_page(user, locality))
+        return page
+
     lean, fat = build_trees(user, locality)
     page = get_feed_page(user, lean, fat)
 
-    # Client doesn't want the response. Just wants
-    # it to be saved in cache (essentially an RPC)
-    if request.args.get('cache') == 'true':
-        r.set(f'user:{user}:feed:next', json.dumps(populate_posts_data(page)))
-        return 'OK'
-
     # save next page to cache for fast serving
-    work_q.put(lambda : asyn_worker.background_task(user, locality, lean, fat))
+    work_q.put(lambda : async_worker.increment_seen(page, unmarshal=False))
+    work_q.put(lambda : async_worker.cache_next_page(user, locality, lean, fat))
     return jsonify(populate_posts_data(page))
 
 

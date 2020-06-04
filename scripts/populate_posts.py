@@ -22,14 +22,16 @@ cursor = cnxn.cursor()
 # used to generate random ages for posts
 now = int(time.time())
 
-arg = sys.argv[1]
-t = int(arg[:-1])
-unit = arg[-1]
+arg1 = sys.argv[1]
+t = int(arg1[:-1])
+unit = arg1[-1]
 
 if unit == 'h':
     time_ago = now - (3600)*t
 else: # 'd'
     time_ago = now - (24*3600)*t
+
+num_posts = int(sys.argv[2])
 
 # used to generate random strings
 dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
@@ -40,32 +42,55 @@ dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
         Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt\
         mollit anim id est laborum.'
 
-# Note that "hot" posts are
-# relatively rare (just like the real world)
-hot_factors = [0.01, 0.22, 0.3, 0.35, 0.4, 0.6, 0.74]
-cum_hot_weights = [60, 70, 80, 85, 90, 97, 100]
-
-seen_vals = [10, 100, 1000, 5000, 10000]
-cum_seen_weights = [10000, 15000, 16000, 16100, 16110]
-
 def new_random_post(creator):
-    hot_factor =  random.choices(hot_factors, cum_weights=cum_hot_weights)[0]
-    seen = random.choices(seen_vals, cum_weights=cum_seen_weights)[0]
+    # mean of 0.2
+    hot_factor = max(abs(random.gauss(0.2, 0.15)), 1)
+    # mean of 50
+    seen = abs(random.expovariate(1/50))
     likes = int(seen * hot_factor)
-
-    likes = random.randint(max(0, likes-10), min(seen, likes+10))
-
     creationTime = random.randint(time_ago, now)
 
-    return {
-        'creator': creator,
-        'creationTime': creationTime,
-        'lat': random.uniform(0, 90),
-        'lng': random.uniform(0, 180),
-        'address': random_str(32),
-        'mediaId': 'some-url',
-        'title': random_str(24),
-        'description': random_str(100),
-        'likes': likes,
-        'seenBy': seen
-    }
+    return (
+        creator,
+        creationTime,
+        random.uniform(0, 90),
+        random.uniform(0, 180),
+        random_str(32),
+        'some-id',
+        random_str(24),
+        random_str(100),
+        likes,
+        seen
+    )
+
+before = time.time()
+
+inputs = []
+# collect users
+cursor.execute('SELECT id, locality from Users')
+users = cursor.fetchall()
+
+cursor.fast_executemany = True
+added = 0
+for i in range(num_posts):
+    user_id, locality = random.choice(users)
+    post = new_random_post(user_id)
+    # check if post with same key already exists
+    cursor.execute('SELECT * from Posts where creator=? and creationTime=?',
+        post[0], post[1])
+        exists = cursor.fetchone()
+        if not exists:
+            inputs.append(post)
+            added += 1
+
+cursor.executemany('INSERT INTO Posts VALUES (?,?,?,?,?,?,?,?,?,?,?)', inputs)
+cursor.commit()
+
+after = time.time()
+
+lat = after - before
+print(f'{added} posts added in {lat} s')
+
+
+
+
