@@ -78,7 +78,7 @@ users = cursor.fetchall()
 
 cursor.fast_executemany = True
 added = 0
-new_posts = {}
+new_posts = set()
 for i in range(num_posts):
     user_id, locality = random.choice(users)
     post = new_random_post(user_id, locality)
