@@ -78,6 +78,7 @@ users = cursor.fetchall()
 
 cursor.fast_executemany = True
 added = 0
+new_posts = {}
 for i in range(num_posts):
     user_id, locality = random.choice(users)
     post = new_random_post(user_id, locality)
@@ -85,8 +86,9 @@ for i in range(num_posts):
     cursor.execute('SELECT * from Posts where creator=? and creationTime=?',
         post[0], post[1])
     exists = cursor.fetchone()
-    if not exists:
+    if not exists and (post[0], post[1]) not in new_posts:
         inputs.append(post)
+        new_posts.add((post[0], post[1]))
         added += 1
 
 cursor.executemany('INSERT INTO Posts VALUES (?,?,?,?,?,?,?,?,?,?,?)', inputs)
