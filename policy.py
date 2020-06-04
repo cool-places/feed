@@ -9,6 +9,8 @@ MIN_TREE_SIZE = 100
 PAGE_SIZE = 25
 FAT_PERCENT = 10
 HOT_FACTOR_EXPIRATION = 120 # 120 secs
+# when this app was born
+INCEPTION = 1588550400
 
 # used as relative weights when sampling posts
 def calculate_hot_factor(creationTime, likes, seen_by):
