@@ -8,9 +8,9 @@ from _thread import start_new_thread
 import json
 from flask import Flask, request, jsonify
 
-import feed.async_worker
-from feed.app_state import r
-from feed.services import build_trees, get_feed_page, populate_posts_data
+import async_worker
+from app_state import r
+from services import build_trees, get_feed_page, populate_posts_data
 
 # Where async work will be queued up.
 #

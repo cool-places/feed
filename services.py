@@ -7,9 +7,9 @@ import time
 import random
 import json
 
-from .wtree import WTree
-from .app_state import cursor, cnxn, r
-from .policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, INCEPTION, calculate_hot_factor, is_cold
+from wtree import WTree
+from app_state import cursor, cnxn, r
+from policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, INCEPTION, calculate_hot_factor, is_cold
 
 ## Break down a post id into its composite key components.
 def unpack(id):
@@ -167,10 +167,12 @@ def grow_trees(user, locality, lean ,fat):
     epoch = now - now % TIME_BLOCK_SIZE
     p = r.pipeline()
 
-    tail = int(r.get(f'user:{user}:session:tail'))
+    tail = r.get(f'user:{user}:session:tail')
     if tail is None or epoch - tail >= (TIME_BLOCK_SIZE*2):
         tail = epoch - TIME_BLOCK_SIZE
         p.set(f'user:{user}:session:tail', tail)
+
+    tail = int(tail)
     
     seen = r.smembers(f'user:{user}:session:seen')
     if len(seen) >= MAX_SEEN_POSTS:

@@ -1,9 +1,9 @@
 import time
 import requests
 
-from feed.services import fetch_posts, build_trees, get_feed_page, populate_posts_data
-from feed.policy import TIME_BLOCK_SIZE
-from feed.wtree import WTree, print_tree    
+from services import fetch_posts, build_trees, get_feed_page, populate_posts_data
+from policy import TIME_BLOCK_SIZE
+from wtree import WTree, print_tree    
 
 def test_fetch_posts():
     now = int(time.time())
@@ -16,6 +16,7 @@ def test_fetch_posts():
     lat = int((after - before) * 1000)
     print(f'{len(posts)} posts fetched in {lat} ms:')
 
+    num_posts_fetched = 0
     epoch -= TIME_BLOCK_SIZE
     while num_posts_fetched < 300:
         before = time.time()
@@ -26,6 +27,7 @@ def test_fetch_posts():
         print(f'{len(posts)} posts fetched in {lat} ms:')
 
         epoch -= TIME_BLOCK_SIZE
+        num_posts_fetched += len(posts)
 
 def test_grow_trees():
     before = time.time()
@@ -74,4 +76,4 @@ def test_endpoints():
     r = requests.get('http://localhost:5000/youn/seattle/feed')
     print(r.json())
 
-
+test_endpoints()

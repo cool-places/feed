@@ -46,7 +46,7 @@ def new_random_post(creator, locality):
     # mean of 0.2
     hot_factor = min(abs(random.gauss(0.2, 0.15)), 1)
     # mean of 50
-    seen = int(abs(random.expovariate(1/50)))
+    seen = max(int(abs(random.expovariate(1/50))), 1)
     likes = int(seen * hot_factor)
     creationTime = random.randint(time_ago, now)
 
