@@ -44,7 +44,7 @@ dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
 
 def new_random_post(creator, locality):
     # mean of 0.2
-    hot_factor = max(abs(random.gauss(0.2, 0.15)), 1)
+    hot_factor = min(abs(random.gauss(0.2, 0.15)), 1)
     # mean of 50
     seen = int(abs(random.expovariate(1/50)))
     likes = int(seen * hot_factor)
