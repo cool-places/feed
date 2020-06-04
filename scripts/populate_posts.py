@@ -1,9 +1,10 @@
-## Populates database with test users and cities.
+## Populates DB with test posts
 
 import random
 import time
 import configparser
 import pyodbc
+import sys
 
 config = configparser.ConfigParser()
 config.read('./app.ini')
@@ -18,32 +19,17 @@ driver = '{ODBC Driver 17 for SQL Server}'
 cnxn = pyodbc.connect(f'DRIVER={driver};SERVER={server};PORT=1433;DATABASE={database};UID={username};PWD={password}')
 cursor = cnxn.cursor()
 
-cities = {
-    'seattle': 'Seattle, US',
-    'seoul': 'Seoul, South Korea',
-    'atlanta': 'Atlanta, US'
-}
-
-users = [
-    'Akib',
-    'Rubab',
-    'Qin',
-    'Chen Chen',
-    'Anjana',
-    'Choukri',
-    'Steve',
-    'Adrianna',
-    'Tim',
-    'Alok',
-    'Reece',
-    'Nikki',
-    'Adam',
-    'TJ'
-]
-
 # used to generate random ages for posts
 now = int(time.time())
-time_ago = now - 86400*3 # s days
+
+arg = sys.argv[1]
+t = int(arg[:-1])
+unit = arg[-1]
+
+if unit == 'h':
+    time_ago = now - (3600)*t
+else: # 'd'
+    time_ago = now - (24*3600)*t
 
 # used to generate random strings
 dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
@@ -83,47 +69,3 @@ def new_random_post(creator):
         'likes': likes,
         'seenBy': seen
     }
-
-def random_str(max_len):
-    start = random.randint(0, len(dummy_text) - 1 - max_len) 
-    length = random.randint(7, max_len)
-    return dummy_text[start:start+length]
-
-# insert cities
-#for id, displayName in cities.items():
-#    cursor.execute('INSERT INTO Locality VALUES (?,?)', id, displayName)
-#cursor.commit()
-
-# insert users
-#city_ids = [key for key in cities.keys()]
-#for user in users:
-#    cursor.execute('INSERT INTO Users VALUES (?,?,?,?,?,?,?)', user.lower(),
-#            random.choice(city_ids), user,
-#            f'Hello! My name is {user}.', 1, time.time(), 'email')
-#cursor.commit()
-
-num_posts = dict()
-
-# insert ~500 posts per user
-cursor.execute('SELECT id, locality from Users')
-rows = cursor.fetchall()
-for row in rows:
-    id, locality = row
-    for i in range(500):
-        post = new_random_post(id)
-        # check if post with same key already exists
-        cursor.execute('SELECT * from Posts where creator=? and creationTime=?',
-                post['creator'], post['creationTime'])
-        exists = cursor.fetchone()
-        if not exists:
-            cursor.execute('INSERT INTO Posts VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                    post['creator'], post['creationTime'], post['lat'],
-                    post['lng'], locality, post['address'], post['mediaId'], post['title'],
-                    post['description'], post['likes'], post['seenBy'])
-            cursor.commit()
-            num_posts[locality] = num_posts.get(locality, 0) + 1
-
-print('database successfully populated!')
-for locality, num in num_posts.items():
-    print(f'  {locality}: {num} posts')
-
