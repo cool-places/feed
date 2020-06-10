@@ -1,7 +1,7 @@
 import time
 import requests
 
-from ..services import fetch_posts, grow_trees, \
+from services import fetch_posts, grow_trees, \
 build_trees, get_feed_page, populate_posts_data, \
 fan_out
 from policy import TIME_BLOCK_SIZE, INCEPTION

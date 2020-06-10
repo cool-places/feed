@@ -2,7 +2,7 @@
 
 # Generates & caches next page of feed, building the tree
 # if necessary
-def cache_next_page(user, locality, lean=None, fat=None):
+def cache_next_page(user, location, lean=None, fat=None):
     # TODO
     return
 

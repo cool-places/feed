@@ -9,14 +9,76 @@ import json
 
 from wtree import WTree
 from app_state import cursor, cnxn, r
-from policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, INCEPTION, calculate_hot_factor, is_cold
+from policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, \
+PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, \
+INCEPTION, GRID_SIZE, FETCH_RADIUS, \
+calculate_hot_factor, is_cold
+
+fetch_query = '''
+declare @p geography = geography::Point(?, ?, 4326);
+select creator, creationTime, location.Lat, location.Long, likes, seen
+from Posts where location.STDistance(@p) <= ?
+and creationTime between ? and ?;
+'''
 
 ## Break down a post id into its composite key components.
-def unpack(id):
-    keys = id.split(b'_')
-    keys[0] = keys[0].decode('utf-8')
+def post_id_to_list(id):
+    keys = id.split('_')
     keys[1] = int(keys[1])
     return keys
+    
+def location_to_str(loc):
+    return str(loc[0]) + ',' + str(loc[1]) 
+
+def snap_to_grid(loc):
+    lat = int(loc[0]*10000)
+    r = lat % GRID_SIZE
+    lat -= r
+    if (r >= GRID_SIZE // 2):
+        lat += GRID_SIZE
+    loc[0] = lat / 10000.0
+
+    lng = int(loc[1]*10000)
+    r = lng % GRID_SIZE
+    lng -= r
+    if (r >= GRID_SIZE // 2):
+        lng += GRID_SIZE
+    loc[1] = lng / 10000.0
+
+def fan_out(loc, post):
+    now = int(time.time() * 1000)
+    epoch = now - now % TIME_BLOCK_SIZE
+    p = r.pipeline()    
+    snap_to_grid(loc)
+
+    boundaries = []
+    N, E, S, W = range(4)
+    boundaries.append(loc[0] + 1) # North
+    boundaries.append(loc[1] + 1) # East
+    boundaries.append(loc[0] - 1) # South
+    boundaries.append(loc[1] - 1) # West
+
+    points = []
+    lng = boundaries[E]
+    # from East -> West
+    while lng != boundaries[W]:
+        lat = boundaries[S]
+        # from South -> North
+        while lat != boundaries[N]:
+            loc_str = location_to_str([lat, lng])
+            p.exists(f'posts:{loc_str}:{epoch}')
+            points.append(loc_str)
+
+            lat += (GRID_SIZE / 10000)
+        lng -= (GRID_SIZE / 10000)
+
+    results = p.execute()
+    for i in range(len(results)):
+        if results[i]:
+            p.sadd(f'posts:{points[i]}:{epoch}', post)
+    
+    p.execute()
+    return points
 
 ## Calculate hot factors of posts in batches.
 def calculate_hot_factors_batch(posts, hot_factors):
@@ -38,7 +100,7 @@ def calculate_hot_factors_batch(posts, hot_factors):
     inputs = []
     for i in range(0, len(stats), 2):
         post = posts[indices[i//2]]
-        keys = unpack(post)
+        keys = post_id_to_list(post)
 
         # if likes doesn't exist, seen_by also doesn't.
         # (and conversely (or is it inversely?) if likes exist,
@@ -47,7 +109,7 @@ def calculate_hot_factors_batch(posts, hot_factors):
             # kinda bothers me to have to go back and forth to DB
             # for every post...but hopefully there aren't that
             # many posts whose stats are not cached
-            cursor.execute('SELECT likes, seenBy FROM Posts\
+            cursor.execute('SELECT likes, seen FROM Posts\
                     WHERE creator=? AND creationTime=?', keys[0], keys[1])
             row = cursor.fetchone()
             stats[i], stats[i+1] = row[0], row[1]
@@ -63,13 +125,16 @@ def calculate_hot_factors_batch(posts, hot_factors):
 
     p.execute()
 
-## Fetch all posts in epoch at locality.
+## Fetch all posts in epoch at location.
 ##
 ## If cache is True, caches data fetched
 ## from DB.
-def fetch_posts(epoch, locality, cache=True):
+def fetch_posts(epoch, loc, cache=True):
+    snap_to_grid(loc)
+    loc_str = location_to_str(loc)
+
     p = r.pipeline()
-    posts = r.smembers(f'posts:{locality}:{epoch}')
+    posts = r.smembers(f'posts:{loc_str}:{epoch}')
     hot_factors = []
 
     if len(posts) != 0:
@@ -78,6 +143,7 @@ def fetch_posts(epoch, locality, cache=True):
         # without worrying about duplicate posts
         posts = list(posts)
         for i in range(len(posts)):
+            posts[i] = posts[i].decode('utf-8')
             p.get(f'post:{posts[i]}:hot_factor')
 
         hot_factors = p.execute()
@@ -85,32 +151,28 @@ def fetch_posts(epoch, locality, cache=True):
         return (posts, hot_factors)
 
     posts = []
-    cursor.execute('SELECT creator, creationTime, likes, seenBy\
-            FROM Posts\
-            WHERE locality=?\
-            AND creationTime BETWEEN ? AND ?',
-            locality, epoch, epoch + TIME_BLOCK_SIZE - 1)
+    cursor.execute(fetch_query, loc[0], loc[1], FETCH_RADIUS, epoch, epoch + TIME_BLOCK_SIZE - 1)
     
     row = cursor.fetchone()
     while row:
         post_id = f'{row[0]}_{row[1]}'
         posts.append(post_id)
 
-        hf = calculate_hot_factor(row[1], row[2], row[3])
+        hf = calculate_hot_factor(row[1], row[4], row[5])
         hot_factors.append(hf)
 
         if cache:
-            p.set(f'post:{post_id}:likes', row[2])
-            p.set(f'post:{post_id}:seen_by', row[3])
+            p.set(f'post:{post_id}:likes', row[4])
+            p.set(f'post:{post_id}:seen_by', row[5])
             p.set(f'post:{post_id}:hot_factor', hf)
-            # force app to recalculate hot factor after 60 seconds
-            p.expire(f'post:{post_id}:hot_factor', 60)
+            # force app to recalculate hot factor
+            p.expire(f'post:{post_id}:hot_factor', HOT_FACTOR_EXPIRATION)
 
         row = cursor.fetchone()
     
     if cache:
         if (len(posts)) != 0:
-            p.sadd(f'posts:{locality}:{epoch}', *posts)
+            p.sadd(f'posts:{loc_str}:{epoch}', *posts)
         p.execute()
     
     return (posts, hot_factors)
@@ -129,12 +191,12 @@ def populate_posts_data(posts):
 
     # fetch post data from DB if nonexistent
     for i in range(len(posts)):
-        keys = unpack(posts[i])
+        keys = post_id_to_list(posts[i])
 
         if data[i] is None or likes[i] is None:
             # again, bothers me that I cannot use executemany
             # to save on RTT
-            cursor.execute('SELECT creator, creationTime, title, description, address, lat, lng, likes\
+            cursor.execute('SELECT creator, creationTime, location.Lat, location.Long, quote, likes\
                 FROM Posts\
                 WHERE creator=?\
                 AND creationTime=?', keys[0], keys[1])
@@ -143,17 +205,15 @@ def populate_posts_data(posts):
             post_dict = {
                 'creator': row[0],
                 'creationTime': row[1],
-                'title': row[2],
-                'description': row[3],
-                'address': row[4],
-                'lat': row[5],
-                'lng': row[6]
+                'lat': row[2],
+                'lng': row[3],
+                'quote': row[4]
             }
             data[i] = post_dict
             p1.set(f'post:{posts[i]}', json.dumps(post_dict))
-            p1.set(f'post:{posts[i]}:likes', row[7])
+            p1.set(f'post:{posts[i]}:likes', row[5])
             # add likes
-            post_dict['likes'] = row[7]
+            post_dict['likes'] = row[5]
         else:
             data[i] = json.loads(data[i])
             data[i]['likes'] = int(likes[i])
@@ -161,18 +221,18 @@ def populate_posts_data(posts):
     p1.execute()
     return data
 
-def grow_trees(user, locality, lean ,fat):
-    now = int(time.time())
+def grow_trees(user, loc, lean ,fat):
+    snap_to_grid(loc)
+    loc_str = location_to_str(loc)
+    now = int(time.time() * 1000)
     # first fetch most recent posts...
     epoch = now - now % TIME_BLOCK_SIZE
     p = r.pipeline()
 
-    tail = r.get(f'user:{user}:session:tail')
+    tail = int(r.get(f'user:{user}:session:tail'))
     if tail is None or epoch - tail >= (TIME_BLOCK_SIZE*2):
         tail = epoch - TIME_BLOCK_SIZE
         p.set(f'user:{user}:session:tail', tail)
-
-    tail = int(tail)
     
     seen = r.smembers(f'user:{user}:session:seen')
     if len(seen) >= MAX_SEEN_POSTS:
@@ -181,25 +241,25 @@ def grow_trees(user, locality, lean ,fat):
         seen = {}
     
     while lean.size() < MIN_TREE_SIZE and epoch > INCEPTION:
-        posts, hot_factors = fetch_posts(epoch, locality)
+        posts, hot_factors = fetch_posts(epoch, loc)
 
-        before = time.time()
+        #before = time.time()
         for i in range(len(posts)):
             # if post already seen by user, ignore
             if posts[i] in seen:
                 continue
 
             post = posts[i]
-            keys = unpack(post)
+            keys = post_id_to_list(post)
             
             if is_cold(keys[1], hot_factors[i]):
                 fat.add(post, hot_factors[i])
             else:
                 lean.add(post, hot_factors[i])
                 p.sadd(f'user:{user}:session:tree', post)
-        after = time.time()
-        lat = (after - before) * 1000
-        print(f'took {lat} ms to add {len(posts)} posts')
+        #after = time.time()
+        #lat = (after - before) * 1000
+        #print(f'took {lat} ms to add {len(posts)} posts')
 
         # continue fetching posts from the past
         epoch = tail
@@ -209,7 +269,9 @@ def grow_trees(user, locality, lean ,fat):
     p.set(f'user:{user}:session:tail', tail)
     p.execute()
 
-def build_trees(user, locality):
+def build_trees(user, loc):
+    snap_to_grid(loc)
+    loc_str = location_to_str(loc)
     # stores post ids. post ids are in the form of [creator]_[creationTime]
     lean = WTree()
     fat = WTree()
@@ -221,14 +283,14 @@ def build_trees(user, locality):
     hot_factors = []
 
     for post in posts:
-        posts_list.append(post)
+        posts_list.append(post.decode('utf-8'))
         p.get(f'post:{post}:hot_factor')
 
     hot_factors = p.execute()
     calculate_hot_factors_batch(posts_list, hot_factors)
 
     for i, post in enumerate(posts_list):
-        keys = unpack(post)
+        keys = post_id_to_list(post)
 
         if is_cold(keys[1], hot_factors[i]):
             fat.add(post, hot_factors[i])
@@ -237,7 +299,7 @@ def build_trees(user, locality):
 
     # if tree is too small...
     if lean.size() < MIN_TREE_SIZE:
-        grow_trees(user, locality, lean, fat)
+        grow_trees(user, loc, lean, fat)
     
     return lean, fat
 

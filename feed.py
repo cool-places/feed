@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify
 
 import async_worker
 from app_state import r
-from services import build_trees, get_feed_page, populate_posts_data
+from services import build_trees, get_feed_page, populate_posts_data, fan_out
 
 # Where async work will be queued up.
 #
@@ -26,21 +26,35 @@ app = Flask(__name__)
 def ping():
     return 'PONG'
 
-@app.route('/<user>/<locality>/feed')
-def get_feed(user, locality):
+@app.route('/<user>/feed')
+def get_feed(user):
     page = r.get(f'user:{user}:session:next')
+
+    latlng = request.args.get('latlng').split(',')
+    latlng[0] = float(latlng[0])
+    latlng[1] = float(latlng[1])
     
     if page is not None:
         work_q.put(lambda: async_worker.increment_seen(page, unmarshal=True))
-        work_q.put(lambda: async_worker.cache_next_page(user, locality))
+        work_q.put(lambda: async_worker.cache_next_page(user, latlng))
         return page
 
-    lean, fat = build_trees(user, locality)
+    lean, fat = build_trees(user, latlng)
     page = get_feed_page(user, lean, fat)
 
     # save next page to cache for fast serving
     work_q.put(lambda : async_worker.increment_seen(page, unmarshal=False))
-    work_q.put(lambda : async_worker.cache_next_page(user, locality, lean, fat))
+    work_q.put(lambda : async_worker.cache_next_page(user, latlng, lean, fat))
     return jsonify(populate_posts_data(page))
+
+@app.route('/fanout')
+def get_fan_out():
+    latlng = request.args.get('latlng').split(',')
+    latlng[0] = float(latlng[0])
+    latlng[1] = float(latlng[1])
+
+    postId = request.args.get('post_id')
+    fan_out(latlng, postId)
+    return 'OK'
 
 

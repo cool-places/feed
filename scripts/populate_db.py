@@ -18,11 +18,7 @@ driver = '{ODBC Driver 17 for SQL Server}'
 cnxn = pyodbc.connect(f'DRIVER={driver};SERVER={server};PORT=1433;DATABASE={database};UID={username};PWD={password}')
 cursor = cnxn.cursor()
 
-cities = {
-    'seattle': 'Seattle, US',
-    'seoul': 'Seoul, South Korea',
-    'atlanta': 'Atlanta, US'
-}
+cities = ['Seattle, US', 'Seoul, South Korea', 'Atlanta, US']
 
 users = [
     'Akib',
@@ -41,16 +37,11 @@ users = [
     'TJ'
 ]
 
-# insert cities
-for id, displayName in cities.items():
-   cursor.execute('INSERT INTO Locality VALUES (?,?)', id, displayName)
-
 # insert users
-city_ids = [key for key in cities.keys()]
 for user in users:
    cursor.execute('INSERT INTO Users VALUES (?,?,?,?,?,?,?)', user.lower(),
-           random.choice(city_ids), user,
-           f'Hello! My name is {user}.', 1, time.time(), 'email')
+           random.choice(cities), user,
+           f'Hello! My name is {user}.', 1, int(time.time() * 1000), 'email')
            
 cursor.commit()
 print('database successfully populated!')

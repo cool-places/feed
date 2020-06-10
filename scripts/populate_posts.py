@@ -20,16 +20,16 @@ cnxn = pyodbc.connect(f'DRIVER={driver};SERVER={server};PORT=1433;DATABASE={data
 cursor = cnxn.cursor()
 
 # used to generate random ages for posts
-now = int(time.time())
+now = int(time.time() * 1000)
 
 arg1 = sys.argv[1]
 t = int(arg1[:-1])
 unit = arg1[-1]
 
 if unit == 'h':
-    time_ago = now - (3600)*t
+    time_ago = now - (3600)*t*1000
 else: # 'd'
-    time_ago = now - (24*3600)*t
+    time_ago = now - (24*3600)*t*1000
 
 num_posts = int(sys.argv[2])
 
@@ -50,15 +50,18 @@ def new_random_post(creator, locality):
     likes = int(seen * hot_factor)
     creationTime = random.randint(time_ago, now)
 
+    if locality == 'Seattle, US':
+        lat = round(random.uniform(46.0, 48.0), 4)
+        lng = round(random.uniform(-121.0, -123.0), 4)
+    else:
+        lat = round(random.uniform(-90, 90), 4)
+        lng = round(random.uniform(-179, 179), 4) # just to be safe
+
     return (
         creator,
         creationTime,
-        random.uniform(0, 90),
-        random.uniform(0, 180),
-        locality,
-        random_str(32),
-        'some-id',
-        random_str(24),
+        lat,
+        lng,
         random_str(100),
         likes,
         seen
@@ -91,7 +94,7 @@ for i in range(num_posts):
         new_posts.add((post[0], post[1]))
         added += 1
 
-cursor.executemany('INSERT INTO Posts VALUES (?,?,?,?,?,?,?,?,?,?,?)', inputs)
+cursor.executemany('INSERT INTO Posts VALUES (?,?,geography::Point(?,?,4326),?,?,?)', inputs)
 cursor.commit()
 
 after = time.time()
