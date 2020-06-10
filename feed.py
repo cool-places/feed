@@ -33,18 +33,20 @@ def get_feed(user):
     latlng = request.args.get('latlng').split(',')
     latlng[0] = float(latlng[0])
     latlng[1] = float(latlng[1])
+
+    token = request.args.get('session_token')
     
     if page is not None:
         work_q.put(lambda: async_worker.increment_seen(page, unmarshal=True))
-        work_q.put(lambda: async_worker.cache_next_page(user, latlng))
+        work_q.put(lambda: async_worker.cache_next_page(user, latlng, session_token=token))
         return page
 
-    lean, fat = build_trees(user, latlng)
+    lean, fat = build_trees(user, latlng, token)
     page = get_feed_page(user, lean, fat)
 
     # save next page to cache for fast serving
     work_q.put(lambda : async_worker.increment_seen(page, unmarshal=False))
-    work_q.put(lambda : async_worker.cache_next_page(user, latlng, lean, fat))
+    work_q.put(lambda : async_worker.cache_next_page(user, latlng, lean, fat, session_token=token))
     return jsonify(populate_posts_data(page))
 
 @app.route('/fanout')

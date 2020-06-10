@@ -7,7 +7,7 @@ TIME_BLOCK_SIZE = 5 * 3600 * 1000 # 5 hours
 MAX_SEEN_POSTS = 10000
 MIN_TREE_SIZE = 50
 PAGE_SIZE = 5
-FAT_PERCENT = 10
+FAT_PERCENT = 5
 HOT_FACTOR_EXPIRATION = 120 # 120 secs
 # When this app was born. No posts
 # exist before this time
@@ -29,5 +29,3 @@ def is_cold(creationTime, hot_factor):
     
     # 10 is an arbitrary number, not thought out in any way
     return age > TIME_BLOCK_SIZE and hot_factor < 10
-
-

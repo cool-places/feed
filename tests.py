@@ -1,5 +1,6 @@
 import time
 import requests
+import sys
 
 from services import fetch_posts, grow_trees, \
 build_trees, get_feed_page, populate_posts_data, \
@@ -84,14 +85,15 @@ def test_fan_out():
     for p in points:
         print(p)
 
-def test_endpoints():
-    r = requests.get('http://localhost:5000/ping')
-    print(r.text)
+def test_endpoint_feed():
+    before = time.time() 
+    r = requests.get(f'http://localhost:5000/youn/feed?latlng={MY_LOCATION[0]},{MY_LOCATION[1]}&session_token=royalsweater')
+    posts = r.json()
+    lat = (time.time() - before) * 1000
 
-    r = requests.get(f'http://localhost:5000/youn/feed?latlng={MY_LOCATION[0]},{MY_LOCATION[1]}')
-    print(r.json())
+    print(f'returned {len(posts)} posts in {lat} ms')
+    for post in posts:
+        age = int((before - post['creationTime']/1000) / 3600)
+        print('  likes:', post['likes'], 'age:', f'{age}h', 'lat:', post['lat'], 'lng:', post['lng'])
 
-    r = requests.get(f'http://localhost:5000/fanout?latlng={MY_LOCATION[0]},{MY_LOCATION[1]}&post_id=newpost')
-    print(r.text)
-
-test_endpoints()
+test_endpoint_feed()

@@ -93,8 +93,6 @@ def calculate_hot_factors_batch(posts, hot_factors):
             indices.append(i)
             p.get(f'post:{post}:likes')
             p.get(f'post:{post}:seen_by')
-        else:
-            hot_factors[i] = int(hot_factors[i])
 
     stats = p.execute()
     inputs = []
@@ -102,10 +100,8 @@ def calculate_hot_factors_batch(posts, hot_factors):
         post = posts[indices[i//2]]
         keys = post_id_to_list(post)
 
-        # if likes doesn't exist, seen_by also doesn't.
-        # (and conversely (or is it inversely?) if likes exist,
-        # so does seen_by).
-        if stats[i] is None:
+        # if likes or seen_by doesn't exist
+        if stats[i] is None or stats[i+1] is None:
             # kinda bothers me to have to go back and forth to DB
             # for every post...but hopefully there aren't that
             # many posts whose stats are not cached
@@ -115,8 +111,10 @@ def calculate_hot_factors_batch(posts, hot_factors):
             stats[i], stats[i+1] = row[0], row[1]
             p.set(f'post:{post}:likes', row[0])
             p.set(f'post:{post}:seen_by', row[1])
+        else:
+            stats[i], stats[i+1] = int(stats[i]), int(stats[i+1])
 
-        hf = calculate_hot_factor(keys[1], int(stats[i]), int(stats[i+1]))
+        hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
         hot_factors[indices[i//2]] = hf
 
         p.set(f'post:{post}:hot_factor', hf)
@@ -146,9 +144,9 @@ def fetch_posts(epoch, loc, cache=True):
             posts[i] = posts[i].decode('utf-8')
             p.get(f'post:{posts[i]}:hot_factor')
 
-        hot_factors = p.execute()
+        hot_factors = [None if elem is None else int(elem) for elem in p.execute()]
         calculate_hot_factors_batch(posts, hot_factors)
-        return (posts, hot_factors)
+        return posts, hot_factors
 
     posts = []
     cursor.execute(fetch_query, loc[0], loc[1], FETCH_RADIUS, epoch, epoch + TIME_BLOCK_SIZE - 1)
@@ -175,9 +173,12 @@ def fetch_posts(epoch, loc, cache=True):
             p.sadd(f'posts:{loc_str}:{epoch}', *posts)
         p.execute()
     
-    return (posts, hot_factors)
+    return posts, hot_factors
 
 def populate_posts_data(posts):
+    if (len(posts) == 0):
+        return []
+    
     p1 = r.pipeline()
     p2 = r.pipeline()
 
@@ -221,32 +222,41 @@ def populate_posts_data(posts):
     p1.execute()
     return data
 
-def grow_trees(user, loc, lean ,fat):
+def grow_trees(user, loc, lean, fat, session_token):
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
+
     now = int(time.time() * 1000)
-    # first fetch most recent posts...
+    # first fetch most recent posts (in current epoch)
     epoch = now - now % TIME_BLOCK_SIZE
     p = r.pipeline()
 
-    tail = int(r.get(f'user:{user}:session:tail'))
-    if tail is None or epoch - tail >= (TIME_BLOCK_SIZE*2):
+    # determine whether this is a new feed session.
+    last_token = r.get(f'user:{user}:session')
+    if last_token is None:
+        p.set(f'user:{user}:session', session_token)
         tail = epoch - TIME_BLOCK_SIZE
-        p.set(f'user:{user}:session:tail', tail)
+    elif last_token.decode('utf-8') != session_token:
+        tail = epoch - TIME_BLOCK_SIZE
+    else:
+        tail = r.get(f'user:{user}:session:tail')
+        if tail is None:
+            tail = epoch - TIME_BLOCK_SIZE
+        else:
+            tail = int(tail)
     
     seen = r.smembers(f'user:{user}:session:seen')
     if len(seen) >= MAX_SEEN_POSTS:
         # flush seen posts
         r.delete(f'user:{user}:session:seen')
-        seen = {}
+        seen = set()
     
-    while lean.size() < MIN_TREE_SIZE and epoch > INCEPTION:
+    while lean.size() < MIN_TREE_SIZE and epoch >= INCEPTION:
         posts, hot_factors = fetch_posts(epoch, loc)
 
-        #before = time.time()
         for i in range(len(posts)):
             # if post already seen by user, ignore
-            if posts[i] in seen:
+            if bytes(posts[i], 'utf-8') in seen:
                 continue
 
             post = posts[i]
@@ -257,27 +267,24 @@ def grow_trees(user, loc, lean ,fat):
             else:
                 lean.add(post, hot_factors[i])
                 p.sadd(f'user:{user}:session:tree', post)
-        #after = time.time()
-        #lat = (after - before) * 1000
-        #print(f'took {lat} ms to add {len(posts)} posts')
 
         # continue fetching posts from the past
         epoch = tail
-        if lean.size() < MIN_TREE_SIZE:
+        if lean.size() < MIN_TREE_SIZE and epoch >= INCEPTION:
             tail -= TIME_BLOCK_SIZE
         
     p.set(f'user:{user}:session:tail', tail)
     p.execute()
 
-def build_trees(user, loc):
+def build_trees(user, loc, session_token):
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
-    # stores post ids. post ids are in the form of [creator]_[creationTime]
+    # trees store post ids.
+    # post ids are in the form of [creator]_[creationTime]
     lean = WTree()
     fat = WTree()
 
     p = r.pipeline()
-    # (redis) set of post ids.
     posts = r.smembers(f'user:{user}:session:tree')
     posts_list = []
     hot_factors = []
@@ -289,6 +296,7 @@ def build_trees(user, loc):
     hot_factors = p.execute()
     calculate_hot_factors_batch(posts_list, hot_factors)
 
+    # trim tree
     for i, post in enumerate(posts_list):
         keys = post_id_to_list(post)
 
@@ -299,7 +307,7 @@ def build_trees(user, loc):
 
     # if tree is too small...
     if lean.size() < MIN_TREE_SIZE:
-        grow_trees(user, loc, lean, fat)
+        grow_trees(user, loc, lean, fat, session_token)
     
     return lean, fat
 
@@ -324,6 +332,9 @@ def get_feed_page(user, lean, fat, fat_percentage=FAT_PERCENT, page_size=PAGE_SI
         p.srem(f'user:{user}:session:tree', post)    
         posts.append(post)
 
-    p.execute()
+    if len(posts) > 0:
+        p.sadd(f'user:{user}:session:seen', *posts)
+        p.execute()
+
     return posts
 
