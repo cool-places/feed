@@ -1,4 +1,4 @@
-## Service layer. Exists to decouple application logic from HTTP context.
+## Service layer. Decouples application logic from HTTP context.
 ##
 ## Majority of the logic involves fetching things from DB and caching the
 ## results.
@@ -15,10 +15,10 @@ INCEPTION, GRID_SIZE, FETCH_RADIUS, \
 calculate_hot_factor, is_cold
 
 fetch_query = '''
-declare @p geography = geography::Point(?, ?, 4326);
-select creator, creationTime, location.Lat, location.Long, likes, seen
-from Posts where location.STDistance(@p) <= ?
-and creationTime between ? and ?;
+DECLARE @p geography = geography::Point(?, ?, 4326);
+SELECT creator, creationTime, location.Lat, location.Long, likes, seen
+FROM Posts WHERE location.STDistance(@p) <= ?
+AND creationTime BETWEEN ? and ?;
 '''
 
 ## Break down a post id into its composite key components.
@@ -26,10 +26,17 @@ def post_id_to_list(id):
     keys = id.split('_')
     keys[1] = int(keys[1])
     return keys
-    
+
+## Serializes a location loc: list[float], where
+## index 0 is lat and index 1 is lng.
+##
+## Used as keys to cache DB query results in redis.
 def location_to_str(loc):
     return str(loc[0]) + ',' + str(loc[1]) 
 
+## Snaps location to the nearest grid point.
+## 
+## Grid is comprised of GRID_SIZE x GRID_SIZE squares.
 def snap_to_grid(loc):
     lat = int(loc[0]*10000)
     r = lat % GRID_SIZE
@@ -45,6 +52,8 @@ def snap_to_grid(loc):
         lng += GRID_SIZE
     loc[1] = lng / 10000.0
 
+## Fans out a post at location loc to nearby grid
+## points.
 def fan_out(loc, post):
     now = int(time.time() * 1000)
     epoch = now - now % TIME_BLOCK_SIZE
@@ -175,6 +184,8 @@ def fetch_posts(epoch, loc, cache=True):
     
     return posts, hot_factors
 
+## Given a list of post IDs, return a list
+## with the posts' data.
 def populate_posts_data(posts):
     if (len(posts) == 0):
         return []
@@ -222,6 +233,11 @@ def populate_posts_data(posts):
     p1.execute()
     return data
 
+## Grow passed in trees, gradually fetching older
+## posts.
+##
+## If new session token is given, it resets the session tail,
+## which represents the next older epoch to fetch posts from.
 def grow_trees(user, loc, lean, fat, session_token):
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
@@ -268,7 +284,7 @@ def grow_trees(user, loc, lean, fat, session_token):
                 lean.add(post, hot_factors[i])
                 p.sadd(f'user:{user}:session:tree', post)
 
-        # continue fetching posts from the past
+        # continue fetching older pasts
         epoch = tail
         if lean.size() < MIN_TREE_SIZE and epoch >= INCEPTION:
             tail -= TIME_BLOCK_SIZE
@@ -276,6 +292,7 @@ def grow_trees(user, loc, lean, fat, session_token):
     p.set(f'user:{user}:session:tail', tail)
     p.execute()
 
+## Build & cache tree for user.
 def build_trees(user, loc, session_token):
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
@@ -311,6 +328,8 @@ def build_trees(user, loc, session_token):
     
     return lean, fat
 
+## Given lean and fat trees, generate a page
+## by sampling from them.
 def get_feed_page(user, lean, fat, fat_percentage=FAT_PERCENT, page_size=PAGE_SIZE):
     posts = []
     p = r.pipeline()

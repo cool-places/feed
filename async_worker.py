@@ -1,12 +1,12 @@
 ## Async worker.
 
-# Generates & caches next page of feed, building the tree
-# if necessary
+# Generates & caches next page of feed, building the weight tree
+# if necessary.
 def cache_next_page(user, location, lean=None, fat=None, session_token=None):
     # TODO
     return
 
-def increment_seen(page, unmarshal):
+def increment_seen(page, data_type):
     # TODO
     return
 

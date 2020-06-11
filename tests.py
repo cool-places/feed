@@ -1,6 +1,10 @@
+## Unit tests for service functions.
+##
+## It is not in the tests directory because apparently I don't
+## know how python modules/packages work.
+
 import time
 import requests
-import sys
 
 from services import fetch_posts, grow_trees, \
 build_trees, get_feed_page, populate_posts_data, \
