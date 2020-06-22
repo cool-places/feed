@@ -11,11 +11,11 @@ import time
 from flask import Flask, request, jsonify
 
 import async_worker
-from app_state import r
+from app_state import r, config
 from services import build_trees, get_feed_page, populate_posts_data, fan_out
 
-# Minimal log configuration
-logging.basicConfig(filename=f'./logs/app.log',
+# log configuration
+logging.basicConfig(filename=config['app']['LOG_FILE'],
         level=logging.DEBUG,
         format='%(asctime)s [%(levelname)s] %(threadName)s : %(message)s')
 
