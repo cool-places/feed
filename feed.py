@@ -47,14 +47,16 @@ def get_feed(user):
         latlng[1] = float(latlng[1])
 
         token = request.args.get('session_token')
+        num_posts = int(request.args.get('page_size'))
     
+        # if next page cached
         if page is not None:
             work_q.put(lambda: async_worker.increment_seen(page, data_type='json_bytes'))
             work_q.put(lambda: async_worker.cache_next_page(user, latlng, session_token=token))
             return page
 
         lean, fat = build_trees(user, latlng, token)
-        page = get_feed_page(user, lean, fat)
+        page = get_feed_page(user, lean, fat, page_size=num_posts)
 
         # cache next page for fast serving
         work_q.put(lambda : async_worker.increment_seen(page, data_type='list'))

@@ -91,7 +91,7 @@ def test_fan_out():
 
 def test_endpoint_feed():
     before = time.time() 
-    r = requests.get(f'http://localhost:5000/youn/feed?latlng={MY_LOCATION[0]},{MY_LOCATION[1]}&session_token=royalsweater')
+    r = requests.get(f'http://localhost:7191/youn/feed?latlng={MY_LOCATION[0]},{MY_LOCATION[1]}&session_token=royalsweater&page_size=2')
     posts = r.json()
     lat = (time.time() - before) * 1000
 
