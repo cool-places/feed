@@ -17,13 +17,13 @@ GRID_SIZE = 2500
 FETCH_RADIUS = 48280 # ~30 miles
 
 ## Hot factor is a measure of how "hot" a post is.
-## It is a function of its age, likes, and how many people have seen it.
+## It is a function of its age, likes, and views (how many people have seen it).
 ##
 ## It is used as relative weights to randomly sample posts
 ## for a user's feed.
-def calculate_hot_factor(creationTime, likes, seen_by):
+def calculate_hot_factor(creationTime, likes, views):
     age = int(time.time() * 1000) - creationTime
-    return max(1, int((likes/seen_by) * 100) + likes//10 - (age//TIME_BLOCK_SIZE) * 10)
+    return max(1, int((likes/views) * 100) + likes//10 - (age//TIME_BLOCK_SIZE) * 10)
 
 ## Determines whether a post is "cold" or not.
 ##
