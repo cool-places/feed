@@ -12,7 +12,7 @@ from flask import Flask, request, jsonify
 
 import async_worker
 from app_state import r, config
-from services import build_trees, get_feed_page, populate_posts_data, fan_out
+from services import build_tree, get_feed_page, populate_posts_data, fan_out
 
 # log configuration
 logging.basicConfig(filename=config['app']['LOG_FILE'],
@@ -55,7 +55,7 @@ def get_feed(user):
             work_q.put(lambda: async_worker.cache_next_page(user, latlng, session_token=token))
             return page
 
-        lean, fat = build_trees(user, latlng, token)
+        lean, fat = build_tree(user, latlng, token)
         page = get_feed_page(user, lean, fat, page_size=num_posts)
 
         # cache next page for fast serving

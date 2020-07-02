@@ -6,6 +6,7 @@
 import time
 import random
 import json
+import logging
 
 from wtree import WTree
 from app_state import cursor, cnxn, r
@@ -16,7 +17,7 @@ calculate_hot_factor, is_cold
 
 fetch_query = '''
 DECLARE @p geography = geography::Point(?, ?, 4326);
-SELECT creator, creationTime, location.Lat, location.Long, likes, "views"
+SELECT creator, creationTime, location.Lat, location.Long, likes, "views", "type"
 FROM Posts WHERE location.STDistance(@p) <= ?
 AND creationTime BETWEEN ? and ?;
 '''
@@ -137,6 +138,8 @@ def calculate_hot_factors_batch(posts, hot_factors):
 ## If cache is True, caches data fetched
 ## from DB.
 def fetch_posts(epoch, loc, cache=True):
+    logging.info(f'fetching {epoch} - {epoch + TIME_BLOCK_SIZE - 1}');
+
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
 
@@ -208,7 +211,7 @@ def populate_posts_data(posts):
         if data[i] is None or likes[i] is None:
             # again, bothers me that I cannot use executemany
             # to save on RTT
-            cursor.execute('SELECT creator, creationTime, location.Lat, location.Long, title, body, likes\
+            cursor.execute('SELECT creator, creationTime, location.Lat, location.Long, title, "type", likes\
                 FROM Posts\
                 WHERE creator=?\
                 AND creationTime=?', keys[0], keys[1])
@@ -220,7 +223,7 @@ def populate_posts_data(posts):
                 'lat': row[2],
                 'lng': row[3],
                 'title': row[4],
-                'body': row[5]
+                'type': row[5]
             }
             data[i] = post_dict
             p1.set(f'post:{posts[i]}', json.dumps(post_dict))
@@ -234,12 +237,12 @@ def populate_posts_data(posts):
     p1.execute()
     return data
 
-## Grow passed in trees, gradually fetching older
+## Grow passed in tree, gradually fetching older
 ## posts.
 ##
 ## If new session token is given, it resets the session tail,
 ## which represents the next older epoch to fetch posts from.
-def grow_trees(user, loc, lean, fat, session_token):
+def grow_tree(user, loc, lean, fat, session_token):
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
 
@@ -255,6 +258,7 @@ def grow_trees(user, loc, lean, fat, session_token):
         tail = epoch - TIME_BLOCK_SIZE
     elif last_token.decode('utf-8') != session_token:
         tail = epoch - TIME_BLOCK_SIZE
+        r.delete(f'user:{user}:session:seen')
     else:
         tail = r.get(f'user:{user}:session:tail')
         if tail is None:
@@ -269,6 +273,7 @@ def grow_trees(user, loc, lean, fat, session_token):
         seen = set()
     
     while lean.size() < MIN_TREE_SIZE and epoch >= INCEPTION:
+        logging.info(f'lean.size(): {lean.size()}')
         posts, hot_factors = fetch_posts(epoch, loc)
 
         for i in range(len(posts)):
@@ -294,7 +299,7 @@ def grow_trees(user, loc, lean, fat, session_token):
     p.execute()
 
 ## Build & cache tree for user.
-def build_trees(user, loc, session_token):
+def build_tree(user, loc, session_token):
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
     # trees store post ids.
@@ -325,7 +330,7 @@ def build_trees(user, loc, session_token):
 
     # if tree is too small...
     if lean.size() < MIN_TREE_SIZE:
-        grow_trees(user, loc, lean, fat, session_token)
+        grow_tree(user, loc, lean, fat, session_token)
     
     return lean, fat
 

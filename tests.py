@@ -6,8 +6,8 @@
 import time
 import requests
 
-from services import fetch_posts, grow_trees, \
-build_trees, get_feed_page, populate_posts_data, \
+from services import fetch_posts, grow_tree, \
+build_tree, get_feed_page, populate_posts_data, \
 fan_out
 from policy import TIME_BLOCK_SIZE, INCEPTION
 from wtree import WTree, print_tree    
@@ -38,10 +38,10 @@ def test_fetch_posts():
         epoch -= TIME_BLOCK_SIZE
         num_posts_fetched += len(posts)
 
-def test_grow_trees():
+def test_grow_tree():
     before = time.time()
     lean, fat = WTree(), WTree()
-    grow_trees('youn', MY_LOCATION, lean, fat)
+    grow_tree('youn', MY_LOCATION, lean, fat)
     after = time.time()
 
     print('lean:')
@@ -52,9 +52,9 @@ def test_grow_trees():
     lat = int((after - before) * 1000)
     print(f'{lean.size()} posts added to tree in {lat} ms:')
 
-def test_build_trees():
+def test_build_tree():
     before = time.time()
-    lean, fat = build_trees('youn', MY_LOCATION)
+    lean, fat = build_tree('youn', MY_LOCATION)
     after = time.time()
 
     print('lean:')
@@ -66,7 +66,7 @@ def test_build_trees():
     print(f'{lean.size()} posts added to tree in {lat} ms:')
 
 def test_populate_posts_data():
-    lean, fat = build_trees('youn', MY_LOCATION)
+    lean, fat = build_tree('youn', MY_LOCATION)
 
     before = time.time() 
     page = populate_posts_data(get_feed_page('youn', lean, fat))
