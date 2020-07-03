@@ -138,7 +138,7 @@ def calculate_hot_factors_batch(posts, hot_factors):
 ## If cache is True, caches data fetched
 ## from DB.
 def fetch_posts(epoch, loc, cache=True):
-    logging.info(f'fetching {epoch} - {epoch + TIME_BLOCK_SIZE - 1}');
+    logging.info(f'fetching posts in [{epoch}, {epoch + TIME_BLOCK_SIZE - 1}]');
 
     snap_to_grid(loc)
     loc_str = location_to_str(loc)
@@ -259,6 +259,7 @@ def grow_tree(user, loc, lean, fat, session_token):
     elif last_token.decode('utf-8') != session_token:
         tail = epoch - TIME_BLOCK_SIZE
         r.delete(f'user:{user}:session:seen')
+        p.set(f'user:{user}:session', session_token)
     else:
         tail = r.get(f'user:{user}:session:tail')
         if tail is None:
@@ -273,7 +274,6 @@ def grow_tree(user, loc, lean, fat, session_token):
         seen = set()
     
     while lean.size() < MIN_TREE_SIZE and epoch >= INCEPTION:
-        logging.info(f'lean.size(): {lean.size()}')
         posts, hot_factors = fetch_posts(epoch, loc)
 
         for i in range(len(posts)):
