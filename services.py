@@ -189,32 +189,46 @@ def fetch_posts(epoch, loc, cache=True):
 
 ## Given a list of post IDs, return a list
 ## with the posts' data.
-def populate_posts_data(posts):
+def populate_posts_data(posts, user):
     if (len(posts) == 0):
         return []
+
+    # first get set of all posts user voted on
+    if (not r.exists(f'user:{user}:voted:up')):
+        p = r.pipeline()
+        cursor.execute('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', user, 'UP')
+        voted = cursor.fetchall()
+
+        for (post_creator, post_creation_time) in voted:
+            p.sadd(f'user:{user}:voted:up', f'{post_creator}_{post_creation_time}')
+
+        p.execute()
     
     p1 = r.pipeline()
     p2 = r.pipeline()
+    p3 = r.pipeline()
 
-    # collect post data for each post
+    # collect post data, vote count, and user-vote data for each post
     for post in posts:
-        p1.get('post:{post}')
-        p2.get('post:{post}:votes')
+        p1.get(f'post:{post}')
+        p2.get(f'post:{post}:votes')
+        p3.sismember(f'user:{user}:voted:up', post)
 
     data = p1.execute()
     votes = p2.execute()
+    voted = p3.execute()
 
-    # fetch post data from DB if nonexistent
+    # fetch post data from DB if not cached
     for i in range(len(posts)):
-        keys = post_id_to_list(posts[i])
+        creator, creation_time = post_id_to_list(posts[i])
 
         if data[i] is None or votes[i] is None:
-            # again, bothers me that I cannot use executemany
+            # cannot use executemany for SELECT statements
             # to save on RTT
             cursor.execute('SELECT creator, creationTime, location.Lat, location.Long, title, "type", votes\
                 FROM Posts\
                 WHERE creator=?\
-                AND creationTime=?', keys[0], keys[1])
+                AND creationTime=?', creator, creation_time)
             row = cursor.fetchone()
 
             post_dict = {
@@ -230,9 +244,11 @@ def populate_posts_data(posts):
             p1.set(f'post:{posts[i]}:votes', row[6])
             # add votes data
             post_dict['votes'] = row[6]
+            post_dict['voted'] = 'UP' if voted[i] else 'NONE'
         else:
             data[i] = json.loads(data[i])
             data[i]['votes'] = int(votes[i])
+            data[i]['voted'] = 'UP' if voted[i] else 'NONE'
 
     p1.execute()
     return data

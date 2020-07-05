@@ -61,10 +61,10 @@ def get_feed(user):
         # cache next page for fast serving
         work_q.put(lambda : async_worker.increment_seen(page, data_type='list'))
         work_q.put(lambda : async_worker.cache_next_page(user, latlng, lean, fat, session_token=token))
-        return jsonify(populate_posts_data(page))
+        return jsonify(populate_posts_data(page, user))
     # can get more specific later if need be
     except Exception as e:
-        app.logger.error(e.message)
+        app.logger.error(e)
         return 'internal server error', 500
 
 ## When a post is created, it must
@@ -81,7 +81,7 @@ def get_fan_out():
         fan_out(latlng, postId)
         return 'OK'
     except Exception as e:
-        app.logger.error(e.message)
+        app.logger.error(e)
         return 'internal server error', 500
 
 
