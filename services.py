@@ -17,7 +17,7 @@ calculate_hot_factor, is_cold
 
 fetch_query = '''
 DECLARE @p geography = geography::Point(?, ?, 4326);
-SELECT creator, creationTime, location.Lat, location.Long, likes, "views", "type"
+SELECT creator, creationTime, location.Lat, location.Long, votes, "views", "type"
 FROM Posts WHERE location.STDistance(@p) <= ?
 AND creationTime BETWEEN ? and ?;
 '''
@@ -101,7 +101,7 @@ def calculate_hot_factors_batch(posts, hot_factors):
         post = posts[i]
         if hot_factors[i] is None:
             indices.append(i)
-            p.get(f'post:{post}:likes')
+            p.get(f'post:{post}:votes')
             p.get(f'post:{post}:views')
 
     stats = p.execute()
@@ -110,16 +110,16 @@ def calculate_hot_factors_batch(posts, hot_factors):
         post = posts[indices[i//2]]
         keys = post_id_to_list(post)
 
-        # if likes or views doesn't exist
+        # if votes or views doesn't exist
         if stats[i] is None or stats[i+1] is None:
             # kinda bothers me to have to go back and forth to DB
             # for every post...but hopefully there aren't that
             # many posts whose stats are not cached
-            cursor.execute('SELECT likes, "views" FROM Posts\
+            cursor.execute('SELECT votes, "views" FROM Posts\
                     WHERE creator=? AND creationTime=?', keys[0], keys[1])
             row = cursor.fetchone()
             stats[i], stats[i+1] = row[0], row[1]
-            p.set(f'post:{post}:likes', row[0])
+            p.set(f'post:{post}:votes', row[0])
             p.set(f'post:{post}:views', row[1])
         else:
             stats[i], stats[i+1] = int(stats[i]), int(stats[i+1])
@@ -172,7 +172,7 @@ def fetch_posts(epoch, loc, cache=True):
         hot_factors.append(hf)
 
         if cache:
-            p.set(f'post:{post_id}:likes', row[4])
+            p.set(f'post:{post_id}:votes', row[4])
             p.set(f'post:{post_id}:views', row[5])
             p.set(f'post:{post_id}:hot_factor', hf)
             # force app to recalculate hot factor
@@ -199,19 +199,19 @@ def populate_posts_data(posts):
     # collect post data for each post
     for post in posts:
         p1.get('post:{post}')
-        p2.get('post:{post}:likes')
+        p2.get('post:{post}:votes')
 
     data = p1.execute()
-    likes = p2.execute()
+    votes = p2.execute()
 
     # fetch post data from DB if nonexistent
     for i in range(len(posts)):
         keys = post_id_to_list(posts[i])
 
-        if data[i] is None or likes[i] is None:
+        if data[i] is None or votes[i] is None:
             # again, bothers me that I cannot use executemany
             # to save on RTT
-            cursor.execute('SELECT creator, creationTime, location.Lat, location.Long, title, "type", likes\
+            cursor.execute('SELECT creator, creationTime, location.Lat, location.Long, title, "type", votes\
                 FROM Posts\
                 WHERE creator=?\
                 AND creationTime=?', keys[0], keys[1])
@@ -227,12 +227,12 @@ def populate_posts_data(posts):
             }
             data[i] = post_dict
             p1.set(f'post:{posts[i]}', json.dumps(post_dict))
-            p1.set(f'post:{posts[i]}:likes', row[6])
-            # add likes
-            post_dict['likes'] = row[6]
+            p1.set(f'post:{posts[i]}:votes', row[6])
+            # add votes data
+            post_dict['votes'] = row[6]
         else:
             data[i] = json.loads(data[i])
-            data[i]['likes'] = int(likes[i])
+            data[i]['votes'] = int(votes[i])
 
     p1.execute()
     return data

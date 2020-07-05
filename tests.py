@@ -98,6 +98,6 @@ def test_endpoint_feed():
     print(f'returned {len(posts)} posts in {lat} ms')
     for post in posts:
         age = int((before - post['creationTime']/1000) / 3600)
-        print('  likes:', post['likes'], 'age:', f'{age}h', 'lat:', post['lat'], 'lng:', post['lng'])
+        print('  votes:', post['votes'], 'age:', f'{age}h', 'lat:', post['lat'], 'lng:', post['lng'])
 
 test_endpoint_feed()
