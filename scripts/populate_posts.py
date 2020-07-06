@@ -42,29 +42,22 @@ dummy_text = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit,\
         Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt\
         mollit anim id est laborum.'
 
-def new_random_post(creator, locality):
+def new_random_post(creator, town):
     # mean of 0.2
     hot_factor = min(abs(random.gauss(0.2, 0.15)), 1)
     # mean of 50
-    seen = max(int(abs(random.expovariate(1/50))), 1)
-    likes = int(seen * hot_factor)
+    views = max(int(abs(random.expovariate(1/50))), 1)
+    votes = int(views * hot_factor)
     creationTime = random.randint(time_ago, now)
-
-    if locality == 'Seattle, US':
-        lat = round(random.uniform(46.0, 48.0), 4)
-        lng = round(random.uniform(-121.0, -123.0), 4)
-    else:
-        lat = round(random.uniform(-90, 90), 4)
-        lng = round(random.uniform(-179, 179), 4) # just to be safe
 
     return (
         creator,
         creationTime,
-        lat,
-        lng,
-        random_str(100),
-        likes,
-        seen
+        town,
+        random_str(30),
+        'TEXT',
+        votes,
+        views
     )
 
 def random_str(max_len):
@@ -75,33 +68,33 @@ def random_str(max_len):
 before = time.time()
 
 inputs = []
+texts = []
 # collect users
-cursor.execute('SELECT id, locality from Users')
+cursor.execute('SELECT id, town from Users')
 users = cursor.fetchall()
 
 cursor.fast_executemany = True
 added = 0
 new_posts = set()
 for i in range(num_posts):
-    user_id, locality = random.choice(users)
-    post = new_random_post(user_id, locality)
+    user_id, town = random.choice(users)
+    post = new_random_post(user_id, town)
     # check if post with same key already exists
     cursor.execute('SELECT * from Posts where creator=? and creationTime=?',
         post[0], post[1])
     exists = cursor.fetchone()
     if not exists and (post[0], post[1]) not in new_posts:
         inputs.append(post)
+        texts.append((post[0], post[1], random_str(80)))
         new_posts.add((post[0], post[1]))
         added += 1
 
-cursor.executemany('INSERT INTO Posts VALUES (?,?,geography::Point(?,?,4326),?,?,?)', inputs)
+cursor.executemany('INSERT INTO Posts VALUES(?,?,?,?,?,?,?)', inputs)
 cursor.commit()
+cursor.executemany('INSERT INTO PostTexts VALUES(?,?,?)', texts)
+cursor.commit() 
 
 after = time.time()
 
 lat = after - before
 print(f'{added} posts added in {lat} s')
-
-
-
-
