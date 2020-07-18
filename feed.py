@@ -43,6 +43,7 @@ def get_feed(user):
         return jsonify(populate_posts_data(page, user))
     # can get more specific later if need be
     except Exception as e:
+        print(e)
         app.logger.error(e)
         return 'internal server error', 500
 
