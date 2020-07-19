@@ -5,6 +5,7 @@
 
 import json
 import logging
+import traceback
 import time
 from flask import Flask, request, jsonify
 
@@ -43,8 +44,13 @@ def get_feed(user):
         return jsonify(populate_posts_data(page, user))
     # can get more specific later if need be
     except Exception as e:
+        tb = traceback.format_exc()
+
         print(e)
+        print(tb)
+        
         app.logger.error(e)
+        app.logger.error(tb)
         return 'internal server error', 500
 
 

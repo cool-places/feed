@@ -17,4 +17,4 @@ lat = (time.time() - before) * 1000
 print(f'returned {len(posts)} posts in {lat} ms')
 for post in posts:
     age = int((before - post['creationTime']/1000) / 3600)
-    print('  votes:', post['votes'], 'age:', f'{age}h', 'voted:', post['voted'], 'creationTime:', post['creationTime'])
+    print('  votes:', post['votes'], 'age:', f'{age}h', 'voted:', post['voted'], 'created by:', post['creatorUsername'])

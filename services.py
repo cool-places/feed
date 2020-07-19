@@ -157,8 +157,8 @@ def populate_posts_data(posts, user):
         if data[i] is None or votes[i] is None:
             # cannot use executemany for SELECT statements
             # to save on RTT
-            execute_sql('SELECT creator, creationTime, title, "type", votes\
-                FROM Posts\
+            execute_sql('SELECT creator, creationTime, title, "type", votes, creatorUsername=username\
+                FROM Posts JOIN Users ON Posts.creator=Users.id\
                 WHERE creator=?\
                 AND creationTime=?', 3, creator, creation_time)
             row = cursor.fetchone()
@@ -167,7 +167,8 @@ def populate_posts_data(posts, user):
                 'creator': row[0],
                 'creationTime': row[1],
                 'title': row[2],
-                'type': row[3]
+                'type': row[3],
+                'creatorUsername': row[5]
             }
             data[i] = post_dict
             p1.set(f'post:{posts[i]}', json.dumps(post_dict))
@@ -177,6 +178,7 @@ def populate_posts_data(posts, user):
             post_dict['voted'] = 'UP' if voted[i] else 'NONE'
         else:
             data[i] = json.loads(data[i])
+            # add votes data
             data[i]['votes'] = int(votes[i])
             data[i]['voted'] = 'UP' if voted[i] else 'NONE'
 
