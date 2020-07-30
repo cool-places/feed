@@ -9,8 +9,7 @@ import json
 import logging
 
 from wtree import WTree
-from app_state import r
-from db import execute_sql, cursor 
+from db import cursor, r 
 from policy import TIME_BLOCK_SIZE, MAX_SEEN_POSTS, MIN_TREE_SIZE, \
 PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, \
 INCEPTION, calculate_hot_factor, is_cold
@@ -47,8 +46,8 @@ def calculate_hot_factors_batch(posts, hot_factors):
             # kinda bothers me to have to go back and forth to DB
             # for every post...but hopefully there aren't that
             # many posts whose stats are not cached
-            execute_sql('SELECT votes, "views" FROM Posts\
-                WHERE creator=? AND creationTime=?', 3, keys[0], keys[1])
+            cursor.execute('SELECT votes, "views" FROM Posts\
+                WHERE creator=? AND creationTime=?', keys[0], keys[1])
             row = cursor.fetchone()
             stats[i], stats[i+1] = row[0], row[1]
             p.set(f'post:{post}:votes', row[0])
@@ -70,8 +69,6 @@ def calculate_hot_factors_batch(posts, hot_factors):
 ## If cache is True, caches data fetched
 ## from DB.
 def fetch_posts(epoch, town, cache=True):
-    logging.info(f'fetching posts in {town} during [{epoch}, {epoch + TIME_BLOCK_SIZE - 1}]')
-
     p = r.pipeline()
     posts = r.smembers(f'posts:{town}:{epoch}')
     hot_factors = []
@@ -90,10 +87,9 @@ def fetch_posts(epoch, town, cache=True):
         return posts, hot_factors
 
     posts = []
-    execute_sql('SELECT creator, creationTime, "type", votes, "views" \
+    cursor.execute('SELECT creator, creationTime, "type", votes, "views" \
         FROM Posts WHERE town=? \
-        AND creationTime BETWEEN ? and ?',
-        3, town, epoch, epoch + TIME_BLOCK_SIZE - 1)
+        AND creationTime BETWEEN ? and ?', town, epoch, epoch + TIME_BLOCK_SIZE - 1)
     
     row = cursor.fetchone()
     while row:
@@ -128,7 +124,7 @@ def populate_posts_data(posts, user):
     # first get set of all posts user voted on
     if (not r.exists(f'user:{user}:voted:up')):
         p = r.pipeline()
-        execute_sql('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', 3, user, 'UP')
+        cursor.execute('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', 3, user, 'UP')
         voted = cursor.fetchall()
 
         for (post_creator, post_creation_time) in voted:
@@ -139,16 +135,20 @@ def populate_posts_data(posts, user):
     p1 = r.pipeline()
     p2 = r.pipeline()
     p3 = r.pipeline()
+    p4 = r.pipeline()
 
-    # collect post data, vote count, and user-vote data for each post
+    # collect post data, vote count, user-vote, user-save data
+    # for each post
     for post in posts:
         p1.get(f'post:{post}')
         p2.get(f'post:{post}:votes')
         p3.sismember(f'user:{user}:voted:up', post)
+        p4.sismember(f'user:{user}:saved-set', post)
 
     data = p1.execute()
     votes = p2.execute()
     voted = p3.execute()
+    saved = p4.execute()
 
     # fetch post data from DB if not cached
     for i in range(len(posts)):
@@ -157,30 +157,31 @@ def populate_posts_data(posts, user):
         if data[i] is None or votes[i] is None:
             # cannot use executemany for SELECT statements
             # to save on RTT
-            execute_sql('SELECT creator, creationTime, title, "type", votes, creatorUsername=username\
-                FROM Posts JOIN Users ON Posts.creator=Users.id\
-                WHERE creator=?\
+            cursor.execute('SELECT creator, creationTime, title, "type", votes, creatorUsername=username \
+                FROM Posts \
+                JOIN Users ON Posts.creator=Users.id \
+                WHERE creator=? \
                 AND creationTime=?', 3, creator, creation_time)
             row = cursor.fetchone()
 
-            post_dict = {
+            data[i] = {
                 'creator': row[0],
                 'creationTime': row[1],
                 'title': row[2],
                 'type': row[3],
                 'creatorUsername': row[5]
             }
-            data[i] = post_dict
-            p1.set(f'post:{posts[i]}', json.dumps(post_dict))
+            p1.set(f'post:{posts[i]}', json.dumps(data[i]))
             p1.set(f'post:{posts[i]}:votes', row[4])
-            # add votes data
-            post_dict['votes'] = row[4]
-            post_dict['voted'] = 'UP' if voted[i] else 'NONE'
+            data[i]['votes'] = row[4]
         else:
             data[i] = json.loads(data[i])
-            # add votes data
+
             data[i]['votes'] = int(votes[i])
-            data[i]['voted'] = 'UP' if voted[i] else 'NONE'
+        # add user-vote data
+        data[i]['voted'] = 'UP' if voted[i] else 'NONE'
+        # add saved data
+        data[i]['saved'] = saved[i]
 
     p1.execute()
     return data

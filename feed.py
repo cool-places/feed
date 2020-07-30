@@ -9,8 +9,7 @@ import traceback
 import time
 from flask import Flask, request, jsonify
 
-import async_worker
-from app_state import r, config
+from app_state import config
 from services import build_tree, get_feed_page, populate_posts_data
 
 # log configuration
@@ -35,8 +34,8 @@ def get_feed(user):
         # page = r.get(f'user:{user}:session:next')
         town = request.args.get('town')
         refresh = request.args.get('refresh') == 'true'
-
         num_posts = int(request.args.get('page_size'))
+
         user = int(user)
 
         lean, fat = build_tree(user, town, refresh)
