@@ -52,4 +52,8 @@ def get_feed(user):
         app.logger.error(tb)
         return 'internal server error', 500
 
+# for debugging purposes
+if (__name__ == '__main__'):
+    app.run('0.0.0.0', 7191)
+
 

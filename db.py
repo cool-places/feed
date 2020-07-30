@@ -18,7 +18,7 @@ driver = '{ODBC Driver 17 for SQL Server}'
 ## Handles retry logic and reonnects to SQL Server
 ## when connection is lost.
 class DBCursor(object):
-    NUM_RETRIES = 3
+    NUM_TRIES = 3
 
     def __init__(self):
         self.connect()
@@ -33,9 +33,10 @@ class DBCursor(object):
 
     def execute(self, statement, *args):
         tried = 0
-        while (tried != NUM_RETRIES):
+        while (tried != DBCursor.NUM_TRIES):
             try:
                 self.cursor.execute(statement, *args)
+                return
             except Exception as e:
                 logging.error(e)
                 logging.error('retrying to connect to SQL Server in 1 sec...')
@@ -46,7 +47,7 @@ class DBCursor(object):
                 
                 tried += 1
 
-                if tried == NUM_RETRIES:
+                if tried == DBCursor.NUM_TRIES:
                     raise e
 
     def fetchone(self):

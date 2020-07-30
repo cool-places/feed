@@ -124,7 +124,7 @@ def populate_posts_data(posts, user):
     # first get set of all posts user voted on
     if (not r.exists(f'user:{user}:voted:up')):
         p = r.pipeline()
-        cursor.execute('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', 3, user, 'UP')
+        cursor.execute('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', user, 'UP')
         voted = cursor.fetchall()
 
         for (post_creator, post_creation_time) in voted:
@@ -161,7 +161,7 @@ def populate_posts_data(posts, user):
                 FROM Posts \
                 JOIN Users ON Posts.creator=Users.id \
                 WHERE creator=? \
-                AND creationTime=?', 3, creator, creation_time)
+                AND creationTime=?', creator, creation_time)
             row = cursor.fetchone()
 
             data[i] = {

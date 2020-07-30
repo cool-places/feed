@@ -10,7 +10,7 @@ else:
     town = 'NightCity'
 
 before = time.time() 
-r = requests.get(f'http://localhost:7191/1/feed?town={town}&page_size={page_size}&refresh=true')
+r = requests.get(f'http://localhost:7191/1/feed?town={town}&page_size={page_size}&refresh=false')
 posts = r.json()
 lat = (time.time() - before) * 1000
 
