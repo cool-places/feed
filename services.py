@@ -121,7 +121,7 @@ def populate_posts_data(posts, user):
     if (len(posts) == 0):
         return []
 
-    # first get set of all posts user voted on
+    # first...get set of all posts user voted on
     if (not r.exists(f'user:{user}:voted:up')):
         p = r.pipeline()
         cursor.execute('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', user, 'UP')
@@ -129,6 +129,17 @@ def populate_posts_data(posts, user):
 
         for (post_creator, post_creation_time) in voted:
             p.sadd(f'user:{user}:voted:up', f'{post_creator}_{post_creation_time}')
+
+        p.execute()
+    
+    # second...get set of all posts user saved
+    if (not r.exists(f'user:{user}:saved-set')):
+        p = r.pipeline()
+        cursor.execute('SELECT postCreator, postCreationTime FROM Saves WHERE saver=?', user)
+        saved = cursor.fetchall()
+        
+        for (post_creator, post_creation_time) in saved:
+            p.sadd(f'user:{user}:saved-set', f'{post_creator}_{post_creation_time}')
 
         p.execute()
     
