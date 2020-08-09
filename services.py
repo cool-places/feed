@@ -21,6 +21,9 @@ def post_id_to_list(id):
     keys[1] = int(keys[1])
     return keys
 
+def construct_post_id(creator, creation_time):
+    return f'{creator}_{creation_time}'
+
 ## Calculate hot factors of posts in batches.
 def calculate_hot_factors_batch(posts, hot_factors):
     # posts at these indices don't have hot factors
@@ -93,7 +96,7 @@ def fetch_posts(epoch, town, cache=True):
     
     row = cursor.fetchone()
     while row:
-        post_id = f'{row[0]}_{row[1]}'
+        post_id = construct_post_id(row[0], row[1])
         posts.append(post_id)
 
         hf = calculate_hot_factor(row[1], row[3], row[4])
@@ -114,88 +117,6 @@ def fetch_posts(epoch, town, cache=True):
         p.execute()
     
     return posts, hot_factors
-
-## Given a list of post IDs, return a list
-## with the posts' data.
-def populate_posts_data(posts, user):
-    if (len(posts) == 0):
-        return []
-
-    # first...get set of all posts user voted on
-    if (not r.exists(f'user:{user}:voted:up')):
-        p = r.pipeline()
-        cursor.execute('SELECT postCreator, postCreationTime FROM Votes WHERE voter=? AND dir=?', user, 'UP')
-        voted = cursor.fetchall()
-
-        for (post_creator, post_creation_time) in voted:
-            p.sadd(f'user:{user}:voted:up', f'{post_creator}_{post_creation_time}')
-
-        p.execute()
-    
-    # second...get set of all posts user saved
-    if (not r.exists(f'user:{user}:saved-set')):
-        p = r.pipeline()
-        cursor.execute('SELECT postCreator, postCreationTime FROM Saves WHERE saver=?', user)
-        saved = cursor.fetchall()
-        
-        for (post_creator, post_creation_time) in saved:
-            p.sadd(f'user:{user}:saved-set', f'{post_creator}_{post_creation_time}')
-
-        p.execute()
-    
-    p1 = r.pipeline()
-    p2 = r.pipeline()
-    p3 = r.pipeline()
-    p4 = r.pipeline()
-
-    # collect post data, vote count, user-vote, user-save data
-    # for each post
-    for post in posts:
-        p1.get(f'post:{post}')
-        p2.get(f'post:{post}:votes')
-        p3.sismember(f'user:{user}:voted:up', post)
-        p4.sismember(f'user:{user}:saved-set', post)
-
-    data = p1.execute()
-    votes = p2.execute()
-    voted = p3.execute()
-    saved = p4.execute()
-
-    # fetch post data from DB if not cached
-    for i in range(len(posts)):
-        creator, creation_time = post_id_to_list(posts[i])
-
-        if data[i] is None or votes[i] is None:
-            # cannot use executemany for SELECT statements
-            # to save on RTT
-            cursor.execute('SELECT creator, creationTime, title, "type", votes, creatorUsername=username \
-                FROM Posts \
-                JOIN Users ON Posts.creator=Users.id \
-                WHERE creator=? \
-                AND creationTime=?', creator, creation_time)
-            row = cursor.fetchone()
-
-            data[i] = {
-                'creator': row[0],
-                'creationTime': row[1],
-                'title': row[2],
-                'type': row[3],
-                'creatorUsername': row[5]
-            }
-            p1.set(f'post:{posts[i]}', json.dumps(data[i]))
-            p1.set(f'post:{posts[i]}:votes', row[4])
-            data[i]['votes'] = row[4]
-        else:
-            data[i] = json.loads(data[i])
-
-            data[i]['votes'] = int(votes[i])
-        # add user-vote data
-        data[i]['voted'] = 'UP' if voted[i] else 'NONE'
-        # add saved data
-        data[i]['saved'] = saved[i]
-
-    p1.execute()
-    return data
 
 ## Grow passed in tree, gradually fetching older
 ## posts.

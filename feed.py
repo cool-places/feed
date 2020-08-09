@@ -10,7 +10,7 @@ import time
 from flask import Flask, request, jsonify
 
 from app_state import config
-from services import build_tree, get_feed_page, populate_posts_data
+from services import build_tree, get_feed_page
 
 # log configuration
 logging.basicConfig(filename=config['app']['LOG_FILE'],
@@ -39,8 +39,7 @@ def get_feed(user):
         user = int(user)
 
         lean, fat = build_tree(user, town, refresh)
-        page = get_feed_page(user, lean, fat, page_size=num_posts)
-        return jsonify(populate_posts_data(page, user))
+        return jsonify(get_feed_page(user, lean, fat, page_size=num_posts))
     # can get more specific later if need be
     except Exception as e:
         tb = traceback.format_exc()

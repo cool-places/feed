@@ -19,7 +19,7 @@ def print_tree(tree):
 
 class Node:
     def __init__(self, id=None, hot_factor=None, parent=None, type='LEAF'):
-        # we are going to treat id itself is the data that Node holds
+        # we are going to treat id itself as the data that Node holds
         self.id = id
         self.parent = parent
         self.l, self.r = None, None
