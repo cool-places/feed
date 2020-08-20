@@ -15,17 +15,15 @@ PAGE_SIZE, FAT_PERCENT, HOT_FACTOR_EXPIRATION, \
 INCEPTION, calculate_hot_factor, is_cold
 
 ## Break down a post id into its composite key components.
-def post_id_to_list(id):
+def _deconstruct_post_id(id):
     keys = id.split('_')
-    keys[0] = int(keys[0])
-    keys[1] = int(keys[1])
-    return keys
+    return (int(keys[0]), int(keys[1]))
 
-def construct_post_id(creator, creation_time):
+def _construct_post_id(creator, creation_time):
     return f'{creator}_{creation_time}'
 
 ## Calculate hot factors of posts in batches.
-def calculate_hot_factors_batch(posts, hot_factors):
+def _calculate_hot_factors_batch(posts, hot_factors):
     # posts at these indices don't have hot factors
     # in cache (expired or never calculated)
     indices = []
@@ -42,15 +40,14 @@ def calculate_hot_factors_batch(posts, hot_factors):
     inputs = []
     for i in range(0, len(stats), 2):
         post = posts[indices[i//2]]
-        keys = post_id_to_list(post)
+        creator, creation_time = _deconstruct_post_id(post)
 
         # if votes or views doesn't exist
         if stats[i] is None or stats[i+1] is None:
-            # kinda bothers me to have to go back and forth to DB
-            # for every post...but hopefully there aren't that
-            # many posts whose stats are not cached
+            # kinda bothers me that there is no way to "batch"
+            # SELECTs
             cursor.execute('SELECT votes, "views" FROM Posts\
-                WHERE creator=? AND creationTime=?', keys[0], keys[1])
+                WHERE creator=? AND creationTime=?', creator, creation_time)
             row = cursor.fetchone()
             stats[i], stats[i+1] = row[0], row[1]
             p.set(f'post:{post}:votes', row[0])
@@ -58,11 +55,11 @@ def calculate_hot_factors_batch(posts, hot_factors):
         else:
             stats[i], stats[i+1] = int(stats[i]), int(stats[i+1])
 
-        hf = calculate_hot_factor(keys[1], stats[i], stats[i+1])
+        hf = calculate_hot_factor(creation_time, stats[i], stats[i+1])
         hot_factors[indices[i//2]] = hf
 
         p.set(f'post:{post}:hot_factor', hf)
-        # force app to recalculate hot factor
+        # reuse hot factor up to HOT_FACTOR_EXPIRATION
         p.expire(f'post:{post}:hot_factor', HOT_FACTOR_EXPIRATION)
 
     p.execute()
@@ -71,7 +68,7 @@ def calculate_hot_factors_batch(posts, hot_factors):
 ##
 ## If cache is True, caches data fetched
 ## from DB.
-def fetch_posts(epoch, town, cache=True):
+def _fetch_posts(epoch, town, cache=True):
     p = r.pipeline()
     posts = r.smembers(f'posts:{town}:{epoch}')
     hot_factors = []
@@ -86,25 +83,25 @@ def fetch_posts(epoch, town, cache=True):
             p.get(f'post:{posts[i]}:hot_factor')
 
         hot_factors = [None if elem is None else int(elem) for elem in p.execute()]
-        calculate_hot_factors_batch(posts, hot_factors)
+        _calculate_hot_factors_batch(posts, hot_factors)
         return posts, hot_factors
 
     posts = []
-    cursor.execute('SELECT creator, creationTime, "type", votes, "views" \
+    cursor.execute('SELECT creator, creationTime, votes, "views" \
         FROM Posts WHERE town=? \
         AND creationTime BETWEEN ? and ?', town, epoch, epoch + TIME_BLOCK_SIZE - 1)
     
     row = cursor.fetchone()
     while row:
-        post_id = construct_post_id(row[0], row[1])
+        post_id = _construct_post_id(row[0], row[1])
         posts.append(post_id)
 
-        hf = calculate_hot_factor(row[1], row[3], row[4])
+        hf = calculate_hot_factor(row[1], row[2], row[3])
         hot_factors.append(hf)
 
         if cache:
-            p.set(f'post:{post_id}:votes', row[3])
-            p.set(f'post:{post_id}:views', row[4])
+            p.set(f'post:{post_id}:votes', row[2])
+            p.set(f'post:{post_id}:views', row[3])
             p.set(f'post:{post_id}:hot_factor', hf)
             # force app to recalculate hot factor
             p.expire(f'post:{post_id}:hot_factor', HOT_FACTOR_EXPIRATION)
@@ -123,7 +120,7 @@ def fetch_posts(epoch, town, cache=True):
 ##
 ## If new session token is given, it resets the session tail,
 ## which represents the next older epoch to fetch posts from.
-def grow_tree(user, town, lean, fat, refresh):
+def _grow_tree(user, town, lean, fat, refresh):
     now = int(time.time() * 1000)
     # first fetch most recent posts (in current epoch)
     epoch = now - now % TIME_BLOCK_SIZE
@@ -149,7 +146,7 @@ def grow_tree(user, town, lean, fat, refresh):
             seen = set()
     
     while lean.size() < MIN_TREE_SIZE and epoch >= INCEPTION:
-        posts, hot_factors = fetch_posts(epoch, town)
+        posts, hot_factors = _fetch_posts(epoch, town)
 
         for i in range(len(posts)):
             # if post already seen by user, ignore
@@ -157,9 +154,9 @@ def grow_tree(user, town, lean, fat, refresh):
                 continue
 
             post = posts[i]
-            keys = post_id_to_list(post)
+            _, creation_time = _deconstruct_post_id(post)
             
-            if is_cold(keys[1], hot_factors[i]):
+            if is_cold(creation_time, hot_factors[i]):
                 fat.add(post, hot_factors[i])
             else:
                 lean.add(post, hot_factors[i])
@@ -190,20 +187,20 @@ def build_tree(user, town, refresh):
         p.get(f'post:{post}:hot_factor')
 
     hot_factors = p.execute()
-    calculate_hot_factors_batch(posts_list, hot_factors)
+    _calculate_hot_factors_batch(posts_list, hot_factors)
 
     # trim tree
     for i, post in enumerate(posts_list):
-        keys = post_id_to_list(post)
+        _, creation_time = _deconstruct_post_id(post)
 
-        if is_cold(keys[1], hot_factors[i]):
+        if is_cold(creation_time, hot_factors[i]):
             fat.add(post, hot_factors[i])
         else:
             lean.add(post, hot_factors[i])
 
     # if tree is too small...
     if lean.size() < MIN_TREE_SIZE:
-        grow_tree(user, town, lean, fat, refresh)
+        _grow_tree(user, town, lean, fat, refresh)
     
     return lean, fat
 

@@ -13,7 +13,7 @@ HOT_FACTOR_EXPIRATION = 120 # 120 secs
 INCEPTION = 1588550400 * 1000
 
 ## Measure of how "hot" a post is.
-## It is a function of its age, votes, and views (how many people have seen it).
+## It is a function of its age, votes, and views.
 ##
 ## It is used as relative weights to randomly sample posts
 ## for a user's feed.

@@ -1,4 +1,4 @@
-## Store global variables (such as config and Redis connection) here
+## Store global variables (such as config) here
 
 import configparser
 
